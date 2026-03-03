@@ -28,6 +28,21 @@ time_sec,rr_ms
 ```
 (단일 컬럼일 때는 RR(ms) 누적으로 시간축 생성)
 
+- X-axis / Y-axis 값 라벨 표시
+- 핀치 제스처로 Zoom-in / Zoom-out
+
+## CSV 예시
+```csv
+time,value
+0,72.4
+1,75.2
+2,71.8
+3,80.1
+```
+
+
+
+main
 ## 사용 방법
 1. Android Studio에서 프로젝트 열기
 2. Gradle Sync 실행
@@ -41,3 +56,7 @@ time_sec,rr_ms
 - 보간: `HrvInterpolator.interpolateToFrequency(..., 4f)`
 - CSV 출력: `HrvInterpolator.toCsv`
 - 그래프: `LineGraphView.setValues(values, startXSec, stepXSec)`
+- 그래프: `LineGraphView.setValues`, 축 라벨/핀치 줌
+
+## 참고
+외부 JitPack 의존성을 제거해서, 저장소 해석 문제로 인한 `dataBindingMergeDependencyArtifactsDebug` 계열 오류 가능성을 낮췄습니다.
