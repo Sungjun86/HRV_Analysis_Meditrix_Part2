@@ -6,11 +6,11 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.util.AttributeSet
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import kotlin.math.max
-import kotlin.math.min
 
 class LineGraphView @JvmOverloads constructor(
     context: Context,
@@ -47,6 +47,8 @@ class LineGraphView @JvmOverloads constructor(
     }
 
     private var values: List<Float> = emptyList()
+    private var xStartSec: Float = 0f
+    private var xStepSec: Float = 1f
 
     private var fullXMin = 0f
     private var fullXMax = 1f
@@ -58,39 +60,76 @@ class LineGraphView @JvmOverloads constructor(
     private var viewYMin = 0f
     private var viewYMax = 1f
 
-    private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-        override fun onScale(detector: ScaleGestureDetector): Boolean {
-            if (values.isEmpty()) return false
+    private val scaleDetector = ScaleGestureDetector(context,
+        object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                if (values.isEmpty()) return false
 
-            val scale = detector.scaleFactor.coerceIn(0.8f, 1.25f)
-            val plot = getPlotBounds()
+                val scale = detector.scaleFactor.coerceIn(0.8f, 1.25f)
+                val plot = getPlotBounds()
 
-            val focusRatioX = ((detector.focusX - plot.left) / plot.width).coerceIn(0f, 1f)
-            val focusRatioY = ((detector.focusY - plot.top) / plot.height).coerceIn(0f, 1f)
+                val focusRatioX = ((detector.focusX - plot.left) / plot.width).coerceIn(0f, 1f)
+                val focusRatioY = ((detector.focusY - plot.top) / plot.height).coerceIn(0f, 1f)
 
-            val focusDataX = viewXMin + focusRatioX * (viewXMax - viewXMin)
-            val focusDataY = viewYMax - focusRatioY * (viewYMax - viewYMin)
+                val focusDataX = viewXMin + focusRatioX * (viewXMax - viewXMin)
+                val focusDataY = viewYMax - focusRatioY * (viewYMax - viewYMin)
 
-            val minXRange = max(1f, (fullXMax - fullXMin) / 50f)
-            val minYRange = max(0.1f, (fullYMax - fullYMin) / 50f)
+                val minXRange = max(1f, (fullXMax - fullXMin) / 50f)
+                val minYRange = max(0.1f, (fullYMax - fullYMin) / 50f)
 
-            val newXRange = ((viewXMax - viewXMin) / scale).coerceIn(minXRange, fullXMax - fullXMin)
-            val newYRange = ((viewYMax - viewYMin) / scale).coerceIn(minYRange, fullYMax - fullYMin)
+                val newXRange = ((viewXMax - viewXMin) / scale).coerceIn(minXRange, fullXMax - fullXMin)
+                val newYRange = ((viewYMax - viewYMin) / scale).coerceIn(minYRange, fullYMax - fullYMin)
 
-            viewXMin = focusDataX - focusRatioX * newXRange
-            viewXMax = viewXMin + newXRange
+                viewXMin = focusDataX - focusRatioX * newXRange
+                viewXMax = viewXMin + newXRange
 
-            viewYMax = focusDataY + focusRatioY * newYRange
-            viewYMin = viewYMax - newYRange
+                viewYMax = focusDataY + focusRatioY * newYRange
+                viewYMin = viewYMax - newYRange
 
-            clampViewToBounds()
-            invalidate()
-            return true
+                clampViewToBounds()
+                invalidate()
+                return true
+            }
         }
-    })
+    )
 
-    fun setValues(newValues: List<Float>) {
+    private val gestureDetector = GestureDetector(context,
+        object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+
+            override fun onScroll(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                distanceX: Float,
+                distanceY: Float
+            ): Boolean {
+                if (values.isEmpty() || scaleDetector.isInProgress) return false
+
+                val plot = getPlotBounds()
+                if (plot.width <= 0f || plot.height <= 0f) return false
+
+                val xRange = viewXMax - viewXMin
+                val yRange = viewYMax - viewYMin
+
+                val dataShiftX = (distanceX / plot.width) * xRange
+                val dataShiftY = -(distanceY / plot.height) * yRange
+
+                viewXMin += dataShiftX
+                viewXMax += dataShiftX
+                viewYMin += dataShiftY
+                viewYMax += dataShiftY
+
+                clampViewToBounds()
+                invalidate()
+                return true
+            }
+        }
+    )
+
+    fun setValues(newValues: List<Float>, startXSec: Float = 0f, stepXSec: Float = 1f) {
         values = newValues
+        xStartSec = startXSec
+        xStepSec = stepXSec.coerceAtLeast(0.0001f)
 
         if (values.isEmpty()) {
             viewXMin = 0f
@@ -101,8 +140,8 @@ class LineGraphView @JvmOverloads constructor(
             return
         }
 
-        fullXMin = 0f
-        fullXMax = (values.size - 1).toFloat().coerceAtLeast(1f)
+        fullXMin = xStartSec
+        fullXMax = xStartSec + (values.size - 1) * xStepSec
 
         val minValue = values.minOrNull() ?: 0f
         val maxValue = values.maxOrNull() ?: 0f
@@ -123,8 +162,9 @@ class LineGraphView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        scaleDetector.onTouchEvent(event)
-        return true
+        val scaleHandled = scaleDetector.onTouchEvent(event)
+        val gestureHandled = gestureDetector.onTouchEvent(event)
+        return scaleHandled || gestureHandled || super.onTouchEvent(event)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -133,7 +173,6 @@ class LineGraphView @JvmOverloads constructor(
         val plot = getPlotBounds()
         if (plot.width <= 0f || plot.height <= 0f) return
 
-        // Axis
         canvas.drawLine(plot.left, plot.top, plot.left, plot.bottom, axisPaint)
         canvas.drawLine(plot.left, plot.bottom, plot.right, plot.bottom, axisPaint)
 
@@ -148,7 +187,7 @@ class LineGraphView @JvmOverloads constructor(
         val path = Path()
         var started = false
         values.forEachIndexed { index, value ->
-            val x = index.toFloat()
+            val x = xStartSec + index * xStepSec
             if (x < viewXMin || x > viewXMax) return@forEachIndexed
 
             val px = plot.left + (x - viewXMin) / (viewXMax - viewXMin) * plot.width
@@ -166,7 +205,7 @@ class LineGraphView @JvmOverloads constructor(
             canvas.drawPath(path, linePaint)
         }
 
-        canvas.drawText("핀치 제스처로 Zoom-in / Zoom-out", plot.left, 34f, infoPaint)
+        canvas.drawText("핀치 줌 + 드래그 | X축: sec", plot.left, 34f, infoPaint)
     }
 
     private fun drawYAxisLabels(canvas: Canvas, plot: PlotBounds) {
@@ -191,7 +230,7 @@ class LineGraphView @JvmOverloads constructor(
             val x = plot.left + (i.toFloat() / tickCount) * plot.width
 
             canvas.drawLine(x, plot.top, x, plot.bottom, gridPaint)
-            canvas.drawText(value.toInt().toString(), x - 16f, plot.bottom + 34f, textPaint)
+            canvas.drawText(String.format("%.1f", value), x - 24f, plot.bottom + 34f, textPaint)
         }
     }
 

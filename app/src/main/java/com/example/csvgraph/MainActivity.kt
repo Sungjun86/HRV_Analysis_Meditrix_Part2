@@ -35,12 +35,37 @@ class MainActivity : AppCompatActivity() {
             Intent.FLAG_GRANT_READ_URI_PERMISSION
         )
 
-        val points = CsvParser.parseNumericSeries(contentResolver, uri)
-        if (points.isEmpty()) {
-            Toast.makeText(this, "CSV에서 숫자 데이터를 찾지 못했습니다.", Toast.LENGTH_SHORT).show()
+        val rawSamples = CsvParser.parseHrvSamples(contentResolver, uri)
+        if (rawSamples.size < 2) {
+            Toast.makeText(this, "HRV 데이터가 충분하지 않습니다. (최소 2개)", Toast.LENGTH_SHORT).show()
             return
         }
 
-        binding.graphView.setValues(points)
+        val interpolated = HrvInterpolator.interpolateToFrequency(rawSamples, targetHz = 4f)
+        if (interpolated.isEmpty()) {
+            Toast.makeText(this, "4Hz 보간 결과가 비어 있습니다.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val start = interpolated.first().timeSec
+        val step = if (interpolated.size > 1) {
+            interpolated[1].timeSec - interpolated[0].timeSec
+        } else {
+            0.25f
+        }
+
+        binding.graphView.setValues(
+            newValues = interpolated.map { it.value },
+            startXSec = start,
+            stepXSec = step
+        )
+
+        val csvText = HrvInterpolator.toCsv(interpolated)
+        val preview = csvText
+            .lineSequence()
+            .take(80)
+            .joinToString("\n")
+
+        binding.textInterpolatedCsv.text = preview
     }
 }
