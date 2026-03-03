@@ -26,3 +26,13 @@ time,value
 - 파일 선택: `ActivityResultContracts.OpenDocument`
 - 파싱: `CsvParser.parseNumericSeries`
 - 그래프: `LineDataSet`, `LineChart`
+
+
+## 빌드 오류 해결 (중요)
+`Execution failed for task ':app:dataBindingMergeDependencyArtifactsDebug'` 오류가 나는 경우,
+대부분 `MPAndroidChart` 의존성 저장소(`jitpack.io`)가 빠져서 발생합니다.
+이 프로젝트는 `settings.gradle.kts`의 `repositories`에 아래를 포함하도록 수정되어 있습니다.
+
+```kotlin
+maven(url = "https://jitpack.io")
+```
