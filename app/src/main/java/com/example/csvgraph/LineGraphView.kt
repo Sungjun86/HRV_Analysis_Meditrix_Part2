@@ -6,6 +6,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.util.AttributeSet
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import kotlin.math.max
 import kotlin.math.min
@@ -22,59 +24,220 @@ class LineGraphView @JvmOverloads constructor(
         style = Paint.Style.STROKE
     }
 
+    private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.LTGRAY
+        strokeWidth = 1f
+        style = Paint.Style.STROKE
+    }
+
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#1976D2")
-        strokeWidth = 5f
+        strokeWidth = 4f
         style = Paint.Style.STROKE
     }
 
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.GRAY
-        textSize = 32f
+        textSize = 28f
+    }
+
+    private val infoPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#607D8B")
+        textSize = 26f
     }
 
     private var values: List<Float> = emptyList()
 
+    private var fullXMin = 0f
+    private var fullXMax = 1f
+    private var fullYMin = 0f
+    private var fullYMax = 1f
+
+    private var viewXMin = 0f
+    private var viewXMax = 1f
+    private var viewYMin = 0f
+    private var viewYMax = 1f
+
+    private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            if (values.isEmpty()) return false
+
+            val scale = detector.scaleFactor.coerceIn(0.8f, 1.25f)
+            val plot = getPlotBounds()
+
+            val focusRatioX = ((detector.focusX - plot.left) / plot.width).coerceIn(0f, 1f)
+            val focusRatioY = ((detector.focusY - plot.top) / plot.height).coerceIn(0f, 1f)
+
+            val focusDataX = viewXMin + focusRatioX * (viewXMax - viewXMin)
+            val focusDataY = viewYMax - focusRatioY * (viewYMax - viewYMin)
+
+            val minXRange = max(1f, (fullXMax - fullXMin) / 50f)
+            val minYRange = max(0.1f, (fullYMax - fullYMin) / 50f)
+
+            val newXRange = ((viewXMax - viewXMin) / scale).coerceIn(minXRange, fullXMax - fullXMin)
+            val newYRange = ((viewYMax - viewYMin) / scale).coerceIn(minYRange, fullYMax - fullYMin)
+
+            viewXMin = focusDataX - focusRatioX * newXRange
+            viewXMax = viewXMin + newXRange
+
+            viewYMax = focusDataY + focusRatioY * newYRange
+            viewYMin = viewYMax - newYRange
+
+            clampViewToBounds()
+            invalidate()
+            return true
+        }
+    })
+
     fun setValues(newValues: List<Float>) {
         values = newValues
+
+        if (values.isEmpty()) {
+            viewXMin = 0f
+            viewXMax = 1f
+            viewYMin = 0f
+            viewYMax = 1f
+            invalidate()
+            return
+        }
+
+        fullXMin = 0f
+        fullXMax = (values.size - 1).toFloat().coerceAtLeast(1f)
+
+        val minValue = values.minOrNull() ?: 0f
+        val maxValue = values.maxOrNull() ?: 0f
+        val pad = max(1f, (maxValue - minValue) * 0.1f)
+
+        fullYMin = minValue - pad
+        fullYMax = maxValue + pad
+
+        resetZoom()
+    }
+
+    private fun resetZoom() {
+        viewXMin = fullXMin
+        viewXMax = fullXMax
+        viewYMin = fullYMin
+        viewYMax = fullYMax
         invalidate()
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        scaleDetector.onTouchEvent(event)
+        return true
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        val left = 80f
-        val top = 40f
-        val right = width - 30f
-        val bottom = height - 80f
-
-        if (width <= 0 || height <= 0) return
+        val plot = getPlotBounds()
+        if (plot.width <= 0f || plot.height <= 0f) return
 
         // Axis
-        canvas.drawLine(left, top, left, bottom, axisPaint)
-        canvas.drawLine(left, bottom, right, bottom, axisPaint)
+        canvas.drawLine(plot.left, plot.top, plot.left, plot.bottom, axisPaint)
+        canvas.drawLine(plot.left, plot.bottom, plot.right, plot.bottom, axisPaint)
 
         if (values.isEmpty()) {
-            canvas.drawText("CSV를 불러오면 그래프가 표시됩니다.", left, height / 2f, textPaint)
+            canvas.drawText("CSV를 불러오면 그래프가 표시됩니다.", plot.left, height / 2f, textPaint)
             return
         }
 
-        val minY = values.minOrNull() ?: 0f
-        val maxY = values.maxOrNull() ?: 0f
-        val range = max(1f, maxY - minY)
-        val stepX = if (values.size == 1) 0f else (right - left) / (values.size - 1)
+        drawYAxisLabels(canvas, plot)
+        drawXAxisLabels(canvas, plot)
 
         val path = Path()
-        values.forEachIndexed { i, v ->
-            val x = left + i * stepX
-            val normalized = (v - minY) / range
-            val y = bottom - normalized * (bottom - top)
+        var started = false
+        values.forEachIndexed { index, value ->
+            val x = index.toFloat()
+            if (x < viewXMin || x > viewXMax) return@forEachIndexed
 
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            val px = plot.left + (x - viewXMin) / (viewXMax - viewXMin) * plot.width
+            val py = plot.bottom - (value - viewYMin) / (viewYMax - viewYMin) * plot.height
+
+            if (!started) {
+                path.moveTo(px, py)
+                started = true
+            } else {
+                path.lineTo(px, py)
+            }
         }
 
-        canvas.drawPath(path, linePaint)
-        canvas.drawText("min: ${"%.2f".format(minY)}", left, height - 20f, textPaint)
-        canvas.drawText("max: ${"%.2f".format(maxY)}", min(right - 220f, left + 260f), top + 30f, textPaint)
+        if (started) {
+            canvas.drawPath(path, linePaint)
+        }
+
+        canvas.drawText("핀치 제스처로 Zoom-in / Zoom-out", plot.left, 34f, infoPaint)
+    }
+
+    private fun drawYAxisLabels(canvas: Canvas, plot: PlotBounds) {
+        val tickCount = 5
+        val step = (viewYMax - viewYMin) / tickCount
+
+        for (i in 0..tickCount) {
+            val value = viewYMin + i * step
+            val y = plot.bottom - (i.toFloat() / tickCount) * plot.height
+
+            canvas.drawLine(plot.left, y, plot.right, y, gridPaint)
+            canvas.drawText(String.format("%.2f", value), 8f, y + 8f, textPaint)
+        }
+    }
+
+    private fun drawXAxisLabels(canvas: Canvas, plot: PlotBounds) {
+        val tickCount = 6
+        val step = (viewXMax - viewXMin) / tickCount
+
+        for (i in 0..tickCount) {
+            val value = viewXMin + i * step
+            val x = plot.left + (i.toFloat() / tickCount) * plot.width
+
+            canvas.drawLine(x, plot.top, x, plot.bottom, gridPaint)
+            canvas.drawText(value.toInt().toString(), x - 16f, plot.bottom + 34f, textPaint)
+        }
+    }
+
+    private fun clampViewToBounds() {
+        val xRange = viewXMax - viewXMin
+        val yRange = viewYMax - viewYMin
+
+        if (viewXMin < fullXMin) {
+            viewXMin = fullXMin
+            viewXMax = viewXMin + xRange
+        }
+        if (viewXMax > fullXMax) {
+            viewXMax = fullXMax
+            viewXMin = viewXMax - xRange
+        }
+
+        if (viewYMin < fullYMin) {
+            viewYMin = fullYMin
+            viewYMax = viewYMin + yRange
+        }
+        if (viewYMax > fullYMax) {
+            viewYMax = fullYMax
+            viewYMin = viewYMax - yRange
+        }
+
+        viewXMin = viewXMin.coerceIn(fullXMin, fullXMax)
+        viewXMax = viewXMax.coerceIn(fullXMin, fullXMax)
+        viewYMin = viewYMin.coerceIn(fullYMin, fullYMax)
+        viewYMax = viewYMax.coerceIn(fullYMin, fullYMax)
+    }
+
+    private fun getPlotBounds(): PlotBounds {
+        val left = 120f
+        val top = 60f
+        val right = width - 30f
+        val bottom = height - 100f
+        return PlotBounds(left, top, right, bottom)
+    }
+
+    private data class PlotBounds(
+        val left: Float,
+        val top: Float,
+        val right: Float,
+        val bottom: Float
+    ) {
+        val width: Float get() = right - left
+        val height: Float get() = bottom - top
     }
 }
