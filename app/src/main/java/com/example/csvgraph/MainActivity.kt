@@ -11,11 +11,19 @@ import com.example.csvgraph.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private var latestInterpolated: List<HrvSample> = emptyList()
 
     private val openCsvLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
             if (uri != null) {
                 renderCsv(uri)
+            }
+        }
+
+    private val createInterpolatedCsvLauncher =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri: Uri? ->
+            if (uri != null) {
+                saveInterpolatedCsv(uri)
             }
         }
 
@@ -26,6 +34,14 @@ class MainActivity : AppCompatActivity() {
 
         binding.buttonLoadCsv.setOnClickListener {
             openCsvLauncher.launch(arrayOf("text/*", "application/csv"))
+        }
+
+        binding.buttonSaveInterpolatedCsv.setOnClickListener {
+            if (latestInterpolated.isEmpty()) {
+                Toast.makeText(this, "먼저 CSV를 불러와 보간 데이터를 생성하세요.", Toast.LENGTH_SHORT).show()
+            } else {
+                createInterpolatedCsvLauncher.launch("hrv_interpolated_4hz.csv")
+            }
         }
     }
 
@@ -59,6 +75,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        latestInterpolated = interpolated
+
         val start = interpolated.first().timeSec
         val step = if (interpolated.size > 1) {
             interpolated[1].timeSec - interpolated[0].timeSec
@@ -71,5 +89,20 @@ class MainActivity : AppCompatActivity() {
             startXSec = start,
             stepXSec = step
         )
+    }
+
+    private fun saveInterpolatedCsv(uri: Uri) {
+        if (latestInterpolated.isEmpty()) return
+
+        runCatching {
+            val csvText = HrvInterpolator.toCsv(latestInterpolated)
+            contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
+                writer.write(csvText)
+            }
+        }.onSuccess {
+            Toast.makeText(this, "4Hz CSV 저장 완료", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(this, "CSV 저장 실패: ${it.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 }

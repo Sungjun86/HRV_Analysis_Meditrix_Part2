@@ -10,8 +10,20 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:text="CSV 불러오기"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/buttonSaveInterpolatedCsv"
+        app:layout_constraintHorizontalChainStyle="spread"
         app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonSaveInterpolatedCsv"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:text="4Hz CSV 저장"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/buttonLoadCsv"
         app:layout_constraintTop_toTopOf="parent" />
 
     <TextView
