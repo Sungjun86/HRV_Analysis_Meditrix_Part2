@@ -11,7 +11,7 @@
         android:layout_height="wrap_content"
         android:text="CSV 불러오기"
         app:layout_constraintEnd_toStartOf="@id/buttonSaveInterpolatedCsv"
-        app:layout_constraintHorizontalChainStyle="spread"
+        app:layout_constraintHorizontal_chainStyle="spread"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
