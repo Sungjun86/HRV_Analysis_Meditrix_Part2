@@ -41,6 +41,18 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        val rawStep = if (rawSamples.size > 1) {
+            ((rawSamples.last().timeSec - rawSamples.first().timeSec) / (rawSamples.size - 1)).coerceAtLeast(0.0001f)
+        } else {
+            1f
+        }
+
+        binding.rawGraphView.setValues(
+            newValues = rawSamples.map { it.value },
+            startXSec = rawSamples.first().timeSec,
+            stepXSec = rawStep
+        )
+
         val interpolated = HrvInterpolator.interpolateToFrequency(rawSamples, targetHz = 4f)
         if (interpolated.isEmpty()) {
             Toast.makeText(this, "4Hz 보간 결과가 비어 있습니다.", Toast.LENGTH_SHORT).show()
@@ -54,18 +66,10 @@ class MainActivity : AppCompatActivity() {
             0.25f
         }
 
-        binding.graphView.setValues(
+        binding.interpolatedGraphView.setValues(
             newValues = interpolated.map { it.value },
             startXSec = start,
             stepXSec = step
         )
-
-        val csvText = HrvInterpolator.toCsv(interpolated)
-        val preview = csvText
-            .lineSequence()
-            .take(80)
-            .joinToString("\n")
-
-        binding.textInterpolatedCsv.text = preview
     }
 }
