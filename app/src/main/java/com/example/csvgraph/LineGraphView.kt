@@ -47,6 +47,8 @@ class LineGraphView @JvmOverloads constructor(
     }
 
     private var values: List<Float> = emptyList()
+    private var xStartSec: Float = 0f
+    private var xStepSec: Float = 1f
 
     private var fullXMin = 0f
     private var fullXMax = 1f
@@ -124,8 +126,10 @@ class LineGraphView @JvmOverloads constructor(
         }
     )
 
-    fun setValues(newValues: List<Float>) {
+    fun setValues(newValues: List<Float>, startXSec: Float = 0f, stepXSec: Float = 1f) {
         values = newValues
+        xStartSec = startXSec
+        xStepSec = stepXSec.coerceAtLeast(0.0001f)
 
         if (values.isEmpty()) {
             viewXMin = 0f
@@ -136,8 +140,8 @@ class LineGraphView @JvmOverloads constructor(
             return
         }
 
-        fullXMin = 0f
-        fullXMax = (values.size - 1).toFloat().coerceAtLeast(1f)
+        fullXMin = xStartSec
+        fullXMax = xStartSec + (values.size - 1) * xStepSec
 
         val minValue = values.minOrNull() ?: 0f
         val maxValue = values.maxOrNull() ?: 0f
@@ -183,7 +187,7 @@ class LineGraphView @JvmOverloads constructor(
         val path = Path()
         var started = false
         values.forEachIndexed { index, value ->
-            val x = index.toFloat()
+            val x = xStartSec + index * xStepSec
             if (x < viewXMin || x > viewXMax) return@forEachIndexed
 
             val px = plot.left + (x - viewXMin) / (viewXMax - viewXMin) * plot.width
@@ -201,7 +205,7 @@ class LineGraphView @JvmOverloads constructor(
             canvas.drawPath(path, linePaint)
         }
 
-        canvas.drawText("핀치 줌 + 한 손가락 드래그 이동", plot.left, 34f, infoPaint)
+        canvas.drawText("핀치 줌 + 드래그 | X축: sec", plot.left, 34f, infoPaint)
     }
 
     private fun drawYAxisLabels(canvas: Canvas, plot: PlotBounds) {
@@ -226,7 +230,7 @@ class LineGraphView @JvmOverloads constructor(
             val x = plot.left + (i.toFloat() / tickCount) * plot.width
 
             canvas.drawLine(x, plot.top, x, plot.bottom, gridPaint)
-            canvas.drawText(value.toInt().toString(), x - 16f, plot.bottom + 34f, textPaint)
+            canvas.drawText(String.format("%.1f", value), x - 24f, plot.bottom + 34f, textPaint)
         }
     }
 
