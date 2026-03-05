@@ -85,6 +85,13 @@ class MainActivity : AppCompatActivity() {
             binding.textFhrValue.text = String.format("f_HR: %.2f bpm", fHr)
         }
 
+        val fSdnn = HrvFeatureExtractor.fSdnn(rrSeconds, flag = 1)
+        if (fSdnn.isNaN()) {
+            binding.textFsdnnValue.text = "f_SDNN: 계산 불가"
+        } else {
+            binding.textFsdnnValue.text = String.format("f_SDNN: %.4f s", fSdnn)
+        }
+
         val filtered20 = HrvSignalProcessor.apply20PercentFilter(interpolated)
         val detrended = HrvSignalProcessor.detrendLinear(filtered20)
 

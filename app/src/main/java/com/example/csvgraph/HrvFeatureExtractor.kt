@@ -1,5 +1,8 @@
 package com.example.csvgraph
 
+import kotlin.math.ceil
+import kotlin.math.sqrt
+
 object HrvFeatureExtractor {
 
     /**
@@ -24,8 +27,49 @@ object HrvFeatureExtractor {
         }
     }
 
+    /**
+     * MATLAB SDNN(RR,num,flag,overlap) 동작 참조 구현.
+     * flag=1 -> n 으로 정규화, flag=0 -> (n-1) 정규화
+     */
+    fun sdnn(rrInput: List<Float>, num: Int = 0, flag: Int = 1, overlap: Float = 1f): List<Float> {
+        val rr = rrInput.toList()
+        if (rr.isEmpty()) return emptyList()
+
+        return if (num == 0) {
+            val global = nanStd(rr, flag)
+            List(rr.size) { global }
+        } else {
+            val step = ceil(num * (1f - overlap)).toInt()
+            if (step > 1) {
+                val out = MutableList(rr.size) { Float.NaN }
+                var i = step
+                while (i <= rr.size) {
+                    val start = maxOf(0, i - num)
+                    val window = rr.subList(start, i)
+                    val validCount = window.count { !it.isNaN() }
+                    out[i - 1] = if (validCount < 5) Float.NaN else nanStd(window, flag)
+                    i += step
+                }
+                out
+            } else {
+                val out = MutableList(rr.size) { Float.NaN }
+                for (i in rr.indices) {
+                    val start = maxOf(0, i - num + 1)
+                    val window = rr.subList(start, i + 1)
+                    val validCount = window.count { !it.isNaN() }
+                    out[i] = if (validCount < 5) Float.NaN else nanStd(window, flag)
+                }
+                out
+            }
+        }
+    }
+
     fun fHrAverage(rrInput: List<Float>): Float {
         return hr(rrInput, num = 0, segment = 0).firstOrNull() ?: Float.NaN
+    }
+
+    fun fSdnn(rrInput: List<Float>, flag: Int = 1): Float {
+        return sdnn(rrInput, num = 0, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
     }
 
     private fun constantIntervalWindow(rr: List<Float>, num: Int): List<Float> {
@@ -65,5 +109,19 @@ object HrvFeatureExtractor {
             out[i] = if (count > 0 && sum > 0f) 60f * count / sum else Float.NaN
         }
         return out
+    }
+
+    private fun nanStd(values: List<Float>, flag: Int): Float {
+        val valid = values.filter { !it.isNaN() }
+        val n = valid.size
+        if (n == 0) return Float.NaN
+        if (n == 1) return 0f
+
+        val mean = valid.sum() / n
+        val varianceNumerator = valid.sumOf { ((it - mean) * (it - mean)).toDouble() }
+        val denominator = if (flag == 0) (n - 1).toDouble() else n.toDouble()
+        if (denominator <= 0.0) return Float.NaN
+
+        return sqrt(varianceNumerator / denominator).toFloat()
     }
 }
