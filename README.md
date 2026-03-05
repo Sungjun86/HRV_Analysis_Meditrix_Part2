@@ -45,7 +45,7 @@ time_sec,rr_ms
 
 ## 핵심 코드
 - 파싱: `CsvParser.parseHrvSamples`
-- 보간: `HrvInterpolator.interpolateToFrequency(..., 4f)` (Natural Cubic Spline)
+- 보간: `HrvInterpolator.interpolateTo4HzCubicSpline(...)` (Natural Cubic Spline)
 - 그래프: `rawGraphView`, `interpolatedGraphView`
 - 후처리: `HrvSignalProcessor.apply20PercentFilter` + `HrvSignalProcessor.detrendLinear`
 - 저장: `ActivityResultContracts.CreateDocument` + `HrvInterpolator.toCsv`

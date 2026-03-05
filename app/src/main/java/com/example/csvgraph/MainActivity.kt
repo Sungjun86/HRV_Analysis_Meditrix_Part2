@@ -69,7 +69,7 @@ class MainActivity : AppCompatActivity() {
             stepXSec = rawStep
         )
 
-        val interpolated = HrvInterpolator.interpolateToFrequency(rawSamples, targetHz = 4f)
+        val interpolated = HrvInterpolator.interpolateTo4HzCubicSpline(rawSamples)
         if (interpolated.isEmpty()) {
             Toast.makeText(this, "4Hz 보간 결과가 비어 있습니다.", Toast.LENGTH_SHORT).show()
             return

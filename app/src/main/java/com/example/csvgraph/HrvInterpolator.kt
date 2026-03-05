@@ -4,6 +4,10 @@ import java.util.Locale
 
 object HrvInterpolator {
 
+    fun interpolateTo4HzCubicSpline(samples: List<HrvSample>): List<HrvSample> {
+        return interpolateToFrequency(samples, targetHz = 4f)
+    }
+
     fun interpolateToFrequency(samples: List<HrvSample>, targetHz: Float = 4f): List<HrvSample> {
         if (samples.size < 2 || targetHz <= 0f) return emptyList()
 
