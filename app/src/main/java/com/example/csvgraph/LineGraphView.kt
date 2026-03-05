@@ -36,6 +36,12 @@ class LineGraphView @JvmOverloads constructor(
         style = Paint.Style.STROKE
     }
 
+    private val overlayLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.RED
+        strokeWidth = 4f
+        style = Paint.Style.STROKE
+    }
+
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.GRAY
         textSize = 28f
@@ -47,6 +53,7 @@ class LineGraphView @JvmOverloads constructor(
     }
 
     private var values: List<Float> = emptyList()
+    private var overlayValues: List<Float> = emptyList()
     private var xStartSec: Float = 0f
     private var xStepSec: Float = 1f
 
@@ -126,8 +133,14 @@ class LineGraphView @JvmOverloads constructor(
         }
     )
 
-    fun setValues(newValues: List<Float>, startXSec: Float = 0f, stepXSec: Float = 1f) {
+    fun setValues(
+        newValues: List<Float>,
+        startXSec: Float = 0f,
+        stepXSec: Float = 1f,
+        overlayValues: List<Float> = emptyList()
+    ) {
         values = newValues
+        this.overlayValues = overlayValues
         xStartSec = startXSec
         xStepSec = stepXSec.coerceAtLeast(0.0001f)
 
@@ -143,8 +156,9 @@ class LineGraphView @JvmOverloads constructor(
         fullXMin = xStartSec
         fullXMax = xStartSec + (values.size - 1) * xStepSec
 
-        val minValue = values.minOrNull() ?: 0f
-        val maxValue = values.maxOrNull() ?: 0f
+        val combined = values + overlayValues
+        val minValue = combined.minOrNull() ?: 0f
+        val maxValue = combined.maxOrNull() ?: 0f
         val pad = max(1f, (maxValue - minValue) * 0.1f)
 
         fullYMin = minValue - pad
@@ -183,10 +197,20 @@ class LineGraphView @JvmOverloads constructor(
 
         drawYAxisLabels(canvas, plot)
         drawXAxisLabels(canvas, plot)
+        drawSeries(canvas, plot, values, linePaint)
 
+        if (overlayValues.isNotEmpty()) {
+            drawSeries(canvas, plot, overlayValues, overlayLinePaint)
+        }
+
+        canvas.drawText("핀치 줌 + 드래그 | X축: sec", plot.left, 34f, infoPaint)
+    }
+
+    private fun drawSeries(canvas: Canvas, plot: PlotBounds, series: List<Float>, paint: Paint) {
         val path = Path()
         var started = false
-        values.forEachIndexed { index, value ->
+
+        series.forEachIndexed { index, value ->
             val x = xStartSec + index * xStepSec
             if (x < viewXMin || x > viewXMax) return@forEachIndexed
 
@@ -201,11 +225,7 @@ class LineGraphView @JvmOverloads constructor(
             }
         }
 
-        if (started) {
-            canvas.drawPath(path, linePaint)
-        }
-
-        canvas.drawText("핀치 줌 + 드래그 | X축: sec", plot.left, 34f, infoPaint)
+        if (started) canvas.drawPath(path, paint)
     }
 
     private fun drawYAxisLabels(canvas: Canvas, plot: PlotBounds) {

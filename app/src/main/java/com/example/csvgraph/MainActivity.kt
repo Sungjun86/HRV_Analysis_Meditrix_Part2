@@ -77,6 +77,9 @@ class MainActivity : AppCompatActivity() {
 
         latestInterpolated = interpolated
 
+        val filtered20 = HrvSignalProcessor.apply20PercentFilter(interpolated)
+        val detrended = HrvSignalProcessor.detrendLinear(filtered20)
+
         val start = interpolated.first().timeSec
         val step = if (interpolated.size > 1) {
             interpolated[1].timeSec - interpolated[0].timeSec
@@ -87,7 +90,8 @@ class MainActivity : AppCompatActivity() {
         binding.interpolatedGraphView.setValues(
             newValues = interpolated.map { it.value },
             startXSec = start,
-            stepXSec = step
+            stepXSec = step,
+            overlayValues = detrended.map { it.value }
         )
     }
 
