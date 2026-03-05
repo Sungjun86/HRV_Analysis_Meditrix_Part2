@@ -25,6 +25,18 @@
         app:layout_constraintStart_toEndOf="@id/buttonLoadCsv"
         app:layout_constraintTop_toTopOf="parent" />
 
+
+    <TextView
+        android:id="@+id/textFhrValue"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="f_HR: - bpm"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/buttonLoadCsv" />
+
     <TextView
         android:id="@+id/textRawTitle"
         android:layout_width="wrap_content"
@@ -33,7 +45,7 @@
         android:text="원본 CSV 그래프"
         android:textStyle="bold"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/buttonLoadCsv" />
+        app:layout_constraintTop_toBottomOf="@id/textFhrValue" />
 
     <com.example.csvgraph.LineGraphView
         android:id="@+id/rawGraphView"

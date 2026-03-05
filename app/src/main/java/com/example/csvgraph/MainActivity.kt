@@ -77,6 +77,14 @@ class MainActivity : AppCompatActivity() {
 
         latestInterpolated = interpolated
 
+        val rrSeconds = toRrSeconds(interpolated.map { it.value })
+        val fHr = HrvFeatureExtractor.fHrAverage(rrSeconds)
+        if (fHr.isNaN()) {
+            binding.textFhrValue.text = "f_HR: 계산 불가"
+        } else {
+            binding.textFhrValue.text = String.format("f_HR: %.2f bpm", fHr)
+        }
+
         val filtered20 = HrvSignalProcessor.apply20PercentFilter(interpolated)
         val detrended = HrvSignalProcessor.detrendLinear(filtered20)
 
@@ -93,6 +101,13 @@ class MainActivity : AppCompatActivity() {
             stepXSec = step,
             overlayValues = detrended.map { it.value }
         )
+    }
+
+    private fun toRrSeconds(values: List<Float>): List<Float> {
+        if (values.isEmpty()) return emptyList()
+        val median = values.sorted()[values.size / 2]
+        val assumeMs = median > 10f
+        return if (assumeMs) values.map { it / 1000f } else values
     }
 
     private fun saveInterpolatedCsv(uri: Uri) {
