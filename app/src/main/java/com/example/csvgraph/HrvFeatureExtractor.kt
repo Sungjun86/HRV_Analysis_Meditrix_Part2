@@ -124,17 +124,69 @@ object HrvFeatureExtractor {
         }
     }
 
-    fun fHrAverage(rrInput: List<Float>): Float {
-        return hr(rrInput, num = 0, segment = 0).firstOrNull() ?: Float.NaN
+    /** pNNx: abs(diff(RR)) > x(ms) 비율 */
+    fun pNnx(rrInput: List<Float>, num: Int = 0, xMs: Int, flag: Int = 1, overlap: Float = 1f): List<Float> {
+        val rr = rrInput.toList()
+        if (rr.size < 2) return List(rr.size) { Float.NaN }
+
+        val nnx = MutableList(rr.size - 1) { i ->
+            val a = rr[i]
+            val b = rr[i + 1]
+            if (a.isNaN() || b.isNaN()) Float.NaN else if (kotlin.math.abs(b - a) > xMs / 1000f) 1f else 0f
+        }
+
+        if (num == 0) {
+            val valid = nnx.filter { !it.isNaN() }
+            val n = valid.size
+            val denom = n - 1 + flag
+            val v = if (denom > 0) valid.sum() / denom else Float.NaN
+            return List(rr.size) { v }
+        }
+
+        val out = MutableList(rr.size) { Float.NaN }
+        val step = ceil(num * (1f - overlap)).toInt()
+
+        if (step > 1) {
+            var i = step
+            while (i <= nnx.size) {
+                val start = maxOf(0, i - num)
+                val window = nnx.subList(start, i)
+                val valid = window.filter { !it.isNaN() }
+                out[i] = if (valid.size < 5) Float.NaN else {
+                    val denom = valid.size - 1 + flag
+                    if (denom > 0) valid.sum() / denom else Float.NaN
+                }
+                i += step
+            }
+        } else {
+            for (i in rr.indices) {
+                if (i == 0) {
+                    out[i] = Float.NaN
+                    continue
+                }
+                val end = i
+                val start = maxOf(0, end - num)
+                val window = nnx.subList(start, end)
+                val valid = window.filter { !it.isNaN() }
+                out[i] = if (valid.size < 5) Float.NaN else {
+                    val denom = valid.size - 1 + flag
+                    if (denom > 0) valid.sum() / denom else Float.NaN
+                }
+            }
+        }
+
+        return out
     }
 
-    fun fSdnn(rrInput: List<Float>, flag: Int = 1): Float {
-        return sdnn(rrInput, num = 0, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
-    }
+    fun fHrAverage(rrInput: List<Float>): Float = hr(rrInput, num = 0, segment = 0).firstOrNull() ?: Float.NaN
+    fun fSdnn(rrInput: List<Float>, flag: Int = 1): Float = sdnn(rrInput, num = 0, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+    fun fRmssd(rrInput: List<Float>, flag: Int = 1): Float = rmssd(rrInput, num = 0, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
 
-    fun fRmssd(rrInput: List<Float>, flag: Int = 1): Float {
-        return rmssd(rrInput, num = 0, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
-    }
+    fun fPnn10(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 10, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+    fun fPnn20(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 20, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+    fun fPnn30(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 30, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+    fun fPnn40(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 40, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+    fun fPnn50(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 50, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
 
     private fun constantIntervalWindow(rr: List<Float>, num: Int): List<Float> {
         val out = MutableList(rr.size) { Float.NaN }

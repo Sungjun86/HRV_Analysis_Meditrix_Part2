@@ -96,6 +96,27 @@ class MainActivity : AppCompatActivity() {
             String.format("f_RMSSD: %.4f s", fRmssd)
         }
 
+        val fPnn10 = HrvFeatureExtractor.fPnn10(rrSeconds, flag = 1)
+        val fPnn20 = HrvFeatureExtractor.fPnn20(rrSeconds, flag = 1)
+        val fPnn30 = HrvFeatureExtractor.fPnn30(rrSeconds, flag = 1)
+        val fPnn40 = HrvFeatureExtractor.fPnn40(rrSeconds, flag = 1)
+        val fPnn50 = HrvFeatureExtractor.fPnn50(rrSeconds, flag = 1)
+
+        binding.textFpnnValues.text = if (
+            fPnn10.isNaN() && fPnn20.isNaN() && fPnn30.isNaN() && fPnn40.isNaN() && fPnn50.isNaN()
+        ) {
+            "f_pNN10: 계산 불가\n" +
+                "f_pNN20: 계산 불가\n" +
+                "f_pNN30: 계산 불가\n" +
+                "f_pNN40: 계산 불가\n" +
+                "f_pNN50: 계산 불가"
+        } else {
+            String.format(
+                "f_pNN10: %.4f\nf_pNN20: %.4f\nf_pNN30: %.4f\nf_pNN40: %.4f\nf_pNN50: %.4f",
+                fPnn10, fPnn20, fPnn30, fPnn40, fPnn50
+            )
+        }
+
         // 4) interpolate HRV_Percentage by 4Hz cubic spline
         val interpolated = HrvInterpolator.interpolateTo4HzCubicSpline(hrvPercentage)
         if (interpolated.isEmpty()) {
