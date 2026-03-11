@@ -64,12 +64,76 @@ object HrvFeatureExtractor {
         }
     }
 
+    /**
+     * MATLAB RMSSD(RR,num,flag,overlap) 동작 참조 구현.
+     * RR 단위: seconds
+     */
+    fun rmssd(rrInput: List<Float>, num: Int = 0, flag: Int = 1, overlap: Float = 1f): List<Float> {
+        val rr = rrInput.toList()
+        if (rr.size < 2) return List(rr.size) { Float.NaN }
+
+        val drr2 = MutableList(rr.size - 1) { i ->
+            val a = rr[i]
+            val b = rr[i + 1]
+            if (a.isNaN() || b.isNaN()) Float.NaN else (b - a) * (b - a)
+        }
+
+        return if (num == 0) {
+            val valid = drr2.filter { !it.isNaN() }
+            val n = valid.size
+            val denom = n - 1 + flag
+            val g = if (denom > 0) sqrt(valid.sum() / denom) else Float.NaN
+            List(rr.size) { g }
+        } else {
+            val step = ceil(num * (1f - overlap)).toInt()
+            val out = MutableList(rr.size) { Float.NaN }
+
+            if (step > 1) {
+                var i = step
+                while (i <= drr2.size) {
+                    val start = maxOf(0, i - num)
+                    val window = drr2.subList(start, i)
+                    val valid = window.filter { !it.isNaN() }
+                    out[i] = if (valid.size < 5) {
+                        Float.NaN
+                    } else {
+                        val denom = valid.size - 1 + flag
+                        if (denom > 0) sqrt(valid.sum() / denom) else Float.NaN
+                    }
+                    i += step
+                }
+            } else {
+                for (i in rr.indices) {
+                    if (i == 0) {
+                        out[i] = Float.NaN
+                        continue
+                    }
+                    val end = i
+                    val start = maxOf(0, end - num)
+                    val window = drr2.subList(start, end)
+                    val valid = window.filter { !it.isNaN() }
+                    out[i] = if (valid.size < 5) {
+                        Float.NaN
+                    } else {
+                        val denom = valid.size - 1 + flag
+                        if (denom > 0) sqrt(valid.sum() / denom) else Float.NaN
+                    }
+                }
+            }
+            out
+        }
+    }
+
     fun fHrAverage(rrInput: List<Float>): Float {
         return hr(rrInput, num = 0, segment = 0).firstOrNull() ?: Float.NaN
     }
 
     fun fSdnn(rrInput: List<Float>, flag: Int = 1): Float {
         return sdnn(rrInput, num = 0, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+    }
+
+    fun fRmssd(rrInput: List<Float>, flag: Int = 1): Float {
+        return rmssd(rrInput, num = 0, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
     }
 
     private fun constantIntervalWindow(rr: List<Float>, num: Int): List<Float> {

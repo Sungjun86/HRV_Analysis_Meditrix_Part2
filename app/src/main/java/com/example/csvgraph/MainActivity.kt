@@ -89,6 +89,13 @@ class MainActivity : AppCompatActivity() {
             String.format("f_SDNN: %.4f s", fSdnn)
         }
 
+        val fRmssd = HrvFeatureExtractor.fRmssd(rrSeconds, flag = 1)
+        binding.textFrmssdValue.text = if (fRmssd.isNaN()) {
+            "f_RMSSD: 계산 불가"
+        } else {
+            String.format("f_RMSSD: %.4f s", fRmssd)
+        }
+
         // 4) interpolate HRV_Percentage by 4Hz cubic spline
         val interpolated = HrvInterpolator.interpolateTo4HzCubicSpline(hrvPercentage)
         if (interpolated.isEmpty()) {
