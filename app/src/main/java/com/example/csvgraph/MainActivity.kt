@@ -101,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         val fPnn30 = HrvFeatureExtractor.fPnn30(rrSeconds, flag = 1)
         val fPnn40 = HrvFeatureExtractor.fPnn40(rrSeconds, flag = 1)
         val fPnn50 = HrvFeatureExtractor.fPnn50(rrSeconds, flag = 1)
+        val poincare = HrvFeatureExtractor.fPoincare(hrvPercentage.map { it.value })
 
         binding.textFpnnValues.text = if (
             fPnn10.isNaN() && fPnn20.isNaN() && fPnn30.isNaN() && fPnn40.isNaN() && fPnn50.isNaN()
@@ -114,6 +115,19 @@ class MainActivity : AppCompatActivity() {
             String.format(
                 "f_pNN10: %.4f\nf_pNN20: %.4f\nf_pNN30: %.4f\nf_pNN40: %.4f\nf_pNN50: %.4f",
                 fPnn10, fPnn20, fPnn30, fPnn40, fPnn50
+            )
+        }
+
+        binding.textPoincareValues.text = if (
+            poincare.sd1.isNaN() && poincare.sd2.isNaN() && poincare.sd1Sd2Ratio.isNaN()
+        ) {
+            "f_SD1: 계산 불가\nf_SD2: 계산 불가\nf_SD1SD2: 계산 불가"
+        } else {
+            String.format(
+                "f_SD1: %.4f\nf_SD2: %.4f\nf_SD1SD2: %.4f",
+                poincare.sd1,
+                poincare.sd2,
+                poincare.sd1Sd2Ratio
             )
         }
 

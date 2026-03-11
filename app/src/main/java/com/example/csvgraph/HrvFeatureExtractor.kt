@@ -5,6 +5,12 @@ import kotlin.math.sqrt
 
 object HrvFeatureExtractor {
 
+    data class PoincareMetrics(
+        val sd1: Float,
+        val sd2: Float,
+        val sd1Sd2Ratio: Float
+    )
+
     /**
      * MATLAB HR(RR,num,segment) 동작을 Kotlin으로 구현.
      * RR 단위: seconds
@@ -187,6 +193,41 @@ object HrvFeatureExtractor {
     fun fPnn30(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 30, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
     fun fPnn40(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 40, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
     fun fPnn50(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 50, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+
+    /**
+     * MATLAB: [f_SD1, f_SD2, f_SD1SD2] = returnmap_val(HRV_Percentage,0,0)
+     */
+    fun fPoincare(rrInput: List<Float>): PoincareMetrics {
+        if (rrInput.size < 2) {
+            return PoincareMetrics(Float.NaN, Float.NaN, Float.NaN)
+        }
+
+        val x1 = mutableListOf<Float>()
+        val x2 = mutableListOf<Float>()
+        for (i in 0 until rrInput.lastIndex) {
+            x1 += rrInput[i]
+            x2 += rrInput[i + 1]
+        }
+
+        val c = 0.70710677f // cos(-45°) = sin(45°)
+        val xr1 = MutableList(x1.size) { i ->
+            val a = x1[i]
+            val b = x2[i]
+            if (a.isNaN() || b.isNaN()) Float.NaN else c * (a + b)
+        }
+        val xr2 = MutableList(x1.size) { i ->
+            val a = x1[i]
+            val b = x2[i]
+            if (a.isNaN() || b.isNaN()) Float.NaN else c * (b - a)
+        }
+
+        // returnmap_val(..., 0, 0): flag=0 -> n-1 normalization
+        val sd2 = nanStd(xr1, flag = 0)
+        val sd1 = nanStd(xr2, flag = 0)
+        val ratio = if (sd2 == 0f || sd2.isNaN()) Float.NaN else sd1 / sd2
+
+        return PoincareMetrics(sd1 = sd1, sd2 = sd2, sd1Sd2Ratio = ratio)
+    }
 
     private fun constantIntervalWindow(rr: List<Float>, num: Int): List<Float> {
         val out = MutableList(rr.size) { Float.NaN }
