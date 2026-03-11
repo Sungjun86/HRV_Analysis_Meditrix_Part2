@@ -102,6 +102,7 @@ class MainActivity : AppCompatActivity() {
         val fPnn40 = HrvFeatureExtractor.fPnn40(rrSeconds, flag = 1)
         val fPnn50 = HrvFeatureExtractor.fPnn50(rrSeconds, flag = 1)
         val poincare = HrvFeatureExtractor.fPoincare(hrvPercentage.map { it.value })
+        val fft = HrvFeatureExtractor.fFftMetrics(hrvPercentage.map { it.value }, fs = 500f)
 
         binding.textFpnnValues.text = if (
             fPnn10.isNaN() && fPnn20.isNaN() && fPnn30.isNaN() && fPnn40.isNaN() && fPnn50.isNaN()
@@ -128,6 +129,24 @@ class MainActivity : AppCompatActivity() {
                 poincare.sd1,
                 poincare.sd2,
                 poincare.sd1Sd2Ratio
+            )
+        }
+
+
+        binding.textFftValues.text = if (
+            fft.pLf.isNaN() && fft.pHf.isNaN() && fft.lfHfRatio.isNaN() &&
+            fft.vLf.isNaN() && fft.lf.isNaN() && fft.hf.isNaN()
+        ) {
+            "f_pLF: 계산 불가\nf_pHF: 계산 불가\nf_LFHF: 계산 불가\nf_VLF: 계산 불가\nf_LF: 계산 불가\nf_HF: 계산 불가"
+        } else {
+            String.format(
+                "f_pLF: %.4f\nf_pHF: %.4f\nf_LFHF: %.4f\nf_VLF: %.4f\nf_LF: %.4f\nf_HF: %.4f",
+                fft.pLf,
+                fft.pHf,
+                fft.lfHfRatio,
+                fft.vLf,
+                fft.lf,
+                fft.hf
             )
         }
 

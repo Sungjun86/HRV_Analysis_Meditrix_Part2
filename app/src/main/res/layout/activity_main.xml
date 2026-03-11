@@ -81,6 +81,17 @@
         app:layout_constraintTop_toBottomOf="@id/textFpnnValues" />
 
     <TextView
+        android:id="@+id/textFftValues"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="f_pLF: -&#10;f_pHF: -&#10;f_LFHF: -&#10;f_VLF: -&#10;f_LF: -&#10;f_HF: -"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/textPoincareValues" />
+
+    <TextView
         android:id="@+id/textRawTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -88,7 +99,7 @@
         android:text="원본 CSV 그래프"
         android:textStyle="bold"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textPoincareValues" />
+        app:layout_constraintTop_toBottomOf="@id/textFftValues" />
 
     <com.example.csvgraph.LineGraphView
         android:id="@+id/rawGraphView"

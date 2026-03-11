@@ -11,6 +11,16 @@ object HrvFeatureExtractor {
         val sd1Sd2Ratio: Float
     )
 
+
+    data class FftMetrics(
+        val pLf: Float,
+        val pHf: Float,
+        val lfHfRatio: Float,
+        val vLf: Float,
+        val lf: Float,
+        val hf: Float
+    )
+
     /**
      * MATLAB HR(RR,num,segment) 동작을 Kotlin으로 구현.
      * RR 단위: seconds
@@ -195,6 +205,88 @@ object HrvFeatureExtractor {
     fun fPnn50(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 50, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
 
     /**
+     * MATLAB: [f_pLF, f_pHF, f_LFHF, f_VLF, f_LF, f_HF] = fft_val_fun(HRV_Percentage, 500)
+     */
+    fun fFftMetrics(rrInput: List<Float>, fs: Float = 500f): FftMetrics {
+        if (rrInput.size < 2 || fs <= 0f || rrInput.any { it.isNaN() }) {
+            return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
+        }
+
+        val ann = mutableListOf<Float>()
+        var sum = 0f
+        rrInput.forEachIndexed { idx, v ->
+            sum += v
+            ann += if (idx == 0) 0f else sum - rrInput.first()
+        }
+
+        val end = ann.last()
+        if (end <= 0f) {
+            return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
+        }
+
+        val step = 1f / fs
+        val rrResampled = splineResample(ann, rrInput, step)
+        if (rrResampled.isEmpty()) {
+            return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
+        }
+
+        val z = nanZScore(rrResampled, opt = 0)
+        val l = z.size
+        if (l == 0) {
+            return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
+        }
+
+        val nfft = nextPow2(l)
+        val power = FloatArray(nfft / 2 + 1)
+
+        for (k in 0..(nfft / 2)) {
+            var real = 0.0
+            var imag = 0.0
+            for (n in 0 until l) {
+                val angle = -2.0 * Math.PI * k * n / nfft
+                val sample = z[n].toDouble()
+                real += sample * kotlin.math.cos(angle)
+                imag += sample * kotlin.math.sin(angle)
+            }
+            real /= l
+            imag /= l
+            val amp = 2.0 * kotlin.math.sqrt(real * real + imag * imag)
+            power[k] = (amp * amp).toFloat()
+        }
+
+        fun bandSum(maxHz: Float): Float {
+            var acc = 0f
+            for (k in power.indices) {
+                val f = fs / 2f * (k.toFloat() / (nfft / 2f))
+                if (f <= maxHz) acc += power[k]
+            }
+            return acc
+        }
+
+        val vlf = bandSum(0.04f)
+        val lfTotal = bandSum(0.15f)
+        val hfTotal = bandSum(0.4f)
+
+        val lf = lfTotal - vlf
+        val hf = hfTotal - vlf - lf
+        val tp = hfTotal
+
+        val denom = tp - vlf
+        val pLf = if (denom > 0f) lf / denom * 100f else Float.NaN
+        val pHf = if (denom > 0f) hf / denom * 100f else Float.NaN
+        val lfHfRatio = if (hf != 0f) lf / hf else Float.NaN
+
+        return FftMetrics(
+            pLf = pLf,
+            pHf = pHf,
+            lfHfRatio = lfHfRatio,
+            vLf = vlf,
+            lf = lf,
+            hf = hf
+        )
+    }
+
+    /**
      * MATLAB: [f_SD1, f_SD2, f_SD1SD2] = returnmap_val(HRV_Percentage,0,0)
      */
     fun fPoincare(rrInput: List<Float>): PoincareMetrics {
@@ -266,6 +358,102 @@ object HrvFeatureExtractor {
             out[i] = if (count > 0 && sum > 0f) 60f * count / sum else Float.NaN
         }
         return out
+    }
+
+    private fun splineResample(x: List<Float>, y: List<Float>, step: Float): List<Float> {
+        if (x.size < 2 || y.size < 2 || x.size != y.size) return emptyList()
+
+        val spline = NaturalCubicSpline(
+            x.map { it.toDouble() },
+            y.map { it.toDouble() }
+        )
+
+        val out = mutableListOf<Float>()
+        var t = 0f
+        val end = x.last()
+        while (t <= end + 1e-6f) {
+            out += spline.evaluate(t.toDouble()).toFloat()
+            t += step
+        }
+        return out
+    }
+
+    private fun nanMean(values: List<Float>): Float {
+        val valid = values.filter { !it.isNaN() }
+        return if (valid.isEmpty()) Float.NaN else valid.sum() / valid.size
+    }
+
+    private fun nanZScore(values: List<Float>, opt: Int = 0): List<Float> {
+        val m = nanMean(values)
+        val s = nanStd(values, opt)
+        if (m.isNaN() || s.isNaN() || s == 0f) return List(values.size) { 0f }
+        return values.map { v -> if (v.isNaN()) Float.NaN else (v - m) / s }
+    }
+
+    private fun nextPow2(value: Int): Int {
+        var n = 1
+        while (n < value) n = n shl 1
+        return n
+    }
+
+    private class NaturalCubicSpline(
+        private val x: List<Double>,
+        private val y: List<Double>
+    ) {
+        private val n = x.size
+        private val a = y.toMutableList()
+        private val b = MutableList(n - 1) { 0.0 }
+        private val c = MutableList(n) { 0.0 }
+        private val d = MutableList(n - 1) { 0.0 }
+
+        init {
+            val h = MutableList(n - 1) { i -> x[i + 1] - x[i] }
+            val alpha = MutableList(n) { 0.0 }
+
+            for (i in 1 until n - 1) {
+                alpha[i] = (3.0 / h[i]) * (a[i + 1] - a[i]) - (3.0 / h[i - 1]) * (a[i] - a[i - 1])
+            }
+
+            val l = MutableList(n) { 0.0 }
+            val mu = MutableList(n) { 0.0 }
+            val z = MutableList(n) { 0.0 }
+
+            l[0] = 1.0
+            for (i in 1 until n - 1) {
+                l[i] = 2.0 * (x[i + 1] - x[i - 1]) - h[i - 1] * mu[i - 1]
+                mu[i] = h[i] / l[i]
+                z[i] = (alpha[i] - h[i - 1] * z[i - 1]) / l[i]
+            }
+
+            l[n - 1] = 1.0
+            c[n - 1] = 0.0
+
+            for (j in n - 2 downTo 0) {
+                c[j] = z[j] - mu[j] * c[j + 1]
+                b[j] = (a[j + 1] - a[j]) / h[j] - h[j] * (c[j + 1] + 2.0 * c[j]) / 3.0
+                d[j] = (c[j + 1] - c[j]) / (3.0 * h[j])
+            }
+        }
+
+        fun evaluate(xq: Double): Double {
+            if (xq <= x.first()) return y.first()
+            if (xq >= x.last()) return y.last()
+
+            var low = 0
+            var high = n - 1
+            while (low <= high) {
+                val mid = (low + high) ushr 1
+                when {
+                    xq < x[mid] -> high = mid - 1
+                    xq > x[mid] -> low = mid + 1
+                    else -> return y[mid]
+                }
+            }
+
+            val i = (low - 1).coerceIn(0, n - 2)
+            val dx = xq - x[i]
+            return a[i] + b[i] * dx + c[i] * dx * dx + d[i] * dx * dx * dx
+        }
     }
 
     private fun nanStd(values: List<Float>, flag: Int): Float {
