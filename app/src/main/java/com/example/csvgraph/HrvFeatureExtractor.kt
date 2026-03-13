@@ -27,6 +27,12 @@ object HrvFeatureExtractor {
         val alpha2: Float
     )
 
+
+    data class TriangularMetrics(
+        val tri: Float,
+        val tinn: Float
+    )
+
     /**
      * MATLAB HR(RR,num,segment) 동작을 Kotlin으로 구현.
      * RR 단위: seconds
@@ -294,6 +300,64 @@ object HrvFeatureExtractor {
     ): Float = dfaMetrics(rrInput, boxsizeShort, boxsizeLong, grade).alpha1
 
     /**
+     * MATLAB reference: [TRI,TINN] = triangular_val(HRV_Percentage,0,1/128,1)
+     */
+    fun fTriangular(rrInput: List<Float>, w: Float = 1f / 128f): TriangularMetrics {
+        if (rrInput.isEmpty() || w <= 0f) return TriangularMetrics(Float.NaN, Float.NaN)
+
+        val rr = rrInput.filter { !it.isNaN() }
+        if (rr.isEmpty()) return TriangularMetrics(Float.NaN, Float.NaN)
+
+        // RR is expected in seconds for triangular_val; auto-convert if input looks like ms.
+        val median = rr.sorted()[rr.size / 2]
+        val rrSec = if (median > 10f) rr.map { it / 1000f } else rr
+
+        val h = histCounts(rrSec, 0f, 5f, w)
+        val maxH = h.maxOrNull() ?: 0
+        if (maxH <= 0) return TriangularMetrics(Float.NaN, Float.NaN)
+
+        val tri = h.sum().toFloat() / maxH.toFloat()
+        val triX = h.indexOfFirst { it == maxH } + 1 // 1-based
+
+        val firstNonZero = h.indexOfFirst { it != 0 } + 1
+        val lastNonZero = h.indexOfLast { it != 0 } + 1
+
+        var n = triX - 1
+        if (firstNonZero > 0 && firstNonZero < triX - 1) {
+            var bestVal = Double.POSITIVE_INFINITY
+            var bestN = n
+            for (i in firstNonZero..(triX - 1)) {
+                val v = tiN(i, h.subList(0, triX))
+                if (v < bestVal) {
+                    bestVal = v
+                    bestN = i
+                }
+            }
+            n = bestN
+        }
+
+        var m = triX + 1
+        if (lastNonZero > 0 && triX < lastNonZero) {
+            var bestVal = Double.POSITIVE_INFINITY
+            var bestM = m
+            val hs = h.subList(triX - 1, h.size)
+            val end = lastNonZero - triX
+            for (i in 1..end) {
+                val candidate = i + 1
+                val v = tiM(candidate, hs)
+                if (v <= bestVal) { // last minimum
+                    bestVal = v
+                    bestM = candidate + triX - 1
+                }
+            }
+            m = bestM
+        }
+
+        val tinn = (m - n) * w
+        return TriangularMetrics(tri = tri, tinn = tinn)
+    }
+
+    /**
      * MATLAB: [f_pLF, f_pHF, f_LFHF, f_VLF, f_LF, f_HF] = fft_val_fun(HRV_Percentage, 500)
      */
     fun fFftMetrics(rrInput: List<Float>, fs: Float = 500f): FftMetrics {
@@ -449,6 +513,67 @@ object HrvFeatureExtractor {
         return out
     }
 
+
+    private fun histCounts(values: List<Float>, start: Float, end: Float, step: Float): List<Int> {
+        if (step <= 0f || end <= start) return emptyList()
+        val bins = kotlin.math.ceil(((end - start) / step).toDouble()).toInt()
+        val counts = MutableList(bins) { 0 }
+        for (v in values) {
+            if (v < start || v > end) continue
+            var idx = ((v - start) / step).toInt()
+            if (idx >= bins) idx = bins - 1
+            if (idx >= 0) counts[idx] = counts[idx] + 1
+        }
+        return counts
+    }
+
+    private fun tiN(n: Int, h: List<Int>): Double {
+        val len = h.size
+        if (n < 1 || n > len) return Double.NaN
+        val maxH = h.maxOrNull()?.toDouble() ?: return Double.NaN
+
+        var s1 = 0.0
+        for (k in n..len) {
+            val y = linearInterpolate(n.toDouble(), len.toDouble(), 0.0, maxH, k.toDouble())
+            val d = y - h[k - 1]
+            s1 += d * d
+        }
+
+        var s2 = 0.0
+        for (k in 1 until n) {
+            val v = h[k - 1].toDouble()
+            s2 += v * v
+        }
+
+        return s1 + s2
+    }
+
+    private fun tiM(m: Int, h: List<Int>): Double {
+        val len = h.size
+        if (m < 1 || m > len) return Double.NaN
+        val maxH = h.maxOrNull()?.toDouble() ?: return Double.NaN
+
+        var s1 = 0.0
+        for (k in 1..m) {
+            val y = linearInterpolate(1.0, m.toDouble(), maxH, 0.0, k.toDouble())
+            val d = y - h[k - 1]
+            s1 += d * d
+        }
+
+        var s2 = 0.0
+        for (k in (m + 1)..len) {
+            val v = h[k - 1].toDouble()
+            s2 += v * v
+        }
+
+        return s1 + s2
+    }
+
+    private fun linearInterpolate(x0: Double, x1: Double, y0: Double, y1: Double, x: Double): Double {
+        if (x1 == x0) return y0
+        val t = (x - x0) / (x1 - x0)
+        return y0 + t * (y1 - y0)
+    }
 
     private fun polyfitLinear(x: IntArray, y: FloatArray): Pair<Float, Float>? {
         if (x.size != y.size || x.isEmpty()) return null

@@ -114,7 +114,12 @@ class MainActivity : AppCompatActivity() {
                 val fPnn50 = HrvFeatureExtractor.fPnn50(rrSeconds, flag = 1)
                 val poincare = HrvFeatureExtractor.fPoincare(hrvPercentage.map { it.value })
                 val fft = HrvFeatureExtractor.fFftMetrics(hrvPercentage.map { it.value }, fs = 500f)
+<<<<<<< codex/create-android-app-in-kotlin-for-csv-graph-78czmp
+                val dfa = HrvFeatureExtractor.dfaMetrics(hrvPercentage.map { it.value })
+                val tri = HrvFeatureExtractor.fTriangular(hrvPercentage.map { it.value })
+=======
                 val fAlpha = HrvFeatureExtractor.fAlpha(hrvPercentage.map { it.value })
+>>>>>>> main
 
                 binding.textFpnnValues.text = if (
                     fPnn10.isNaN() && fPnn20.isNaN() && fPnn30.isNaN() && fPnn40.isNaN() && fPnn50.isNaN()
@@ -161,12 +166,28 @@ class MainActivity : AppCompatActivity() {
                     )
                 }
 
+<<<<<<< codex/create-android-app-in-kotlin-for-csv-graph-78czmp
+                binding.textFalphaValue.text = if (dfa.alpha1.isNaN() && dfa.alpha2.isNaN()) {
+                    "f_alpha_1: 계산 불가\nf_alpha_2: 계산 불가"
+                } else {
+                    String.format("f_alpha_1: %.4f\nf_alpha_2: %.4f", dfa.alpha1, dfa.alpha2)
+                }
+
+                binding.textFtriTinnValue.text = if (tri.tri.isNaN() && tri.tinn.isNaN()) {
+                    "f_TRI: 계산 불가\nf_TINN: 계산 불가"
+                } else {
+                    String.format("f_TRI: %.4f\nf_TINN: %.4f s", tri.tri, tri.tinn)
+                }
+
+
+=======
                 binding.textFalphaValue.text = if (fAlpha.isNaN()) {
                     "f_alpha: 계산 불가"
                 } else {
                     String.format("f_alpha: %.4f", fAlpha)
                 }
 
+>>>>>>> main
                 // 4) interpolate HRV_Percentage by 4Hz cubic spline
                 val interpolated = HrvInterpolator.interpolateTo4HzCubicSpline(hrvPercentage)
                 if (interpolated.isEmpty()) {
