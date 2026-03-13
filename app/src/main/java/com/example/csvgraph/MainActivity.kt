@@ -114,6 +114,7 @@ class MainActivity : AppCompatActivity() {
                 val fPnn50 = HrvFeatureExtractor.fPnn50(rrSeconds, flag = 1)
                 val poincare = HrvFeatureExtractor.fPoincare(hrvPercentage.map { it.value })
                 val fft = HrvFeatureExtractor.fFftMetrics(hrvPercentage.map { it.value }, fs = 500f)
+                val fAlpha = HrvFeatureExtractor.fAlpha(hrvPercentage.map { it.value })
 
                 binding.textFpnnValues.text = if (
                     fPnn10.isNaN() && fPnn20.isNaN() && fPnn30.isNaN() && fPnn40.isNaN() && fPnn50.isNaN()
@@ -158,6 +159,12 @@ class MainActivity : AppCompatActivity() {
                         fft.lf,
                         fft.hf
                     )
+                }
+
+                binding.textFalphaValue.text = if (fAlpha.isNaN()) {
+                    "f_alpha: 계산 불가"
+                } else {
+                    String.format("f_alpha: %.4f", fAlpha)
                 }
 
                 // 4) interpolate HRV_Percentage by 4Hz cubic spline

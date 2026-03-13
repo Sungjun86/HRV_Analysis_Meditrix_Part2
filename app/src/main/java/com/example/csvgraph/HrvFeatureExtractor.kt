@@ -205,6 +205,72 @@ object HrvFeatureExtractor {
     fun fPnn50(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 50, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
 
     /**
+     * MATLAB reference: alpha = DFA(HRV_Percentage)
+     * 기본 box size: short=4..16, long=16..64, grade=1
+     * 반환값은 alpha(1) (short-term scaling exponent) 사용.
+     */
+    fun fAlpha(
+        rrInput: List<Float>,
+        boxsizeShort: IntRange = 4..16,
+        boxsizeLong: IntRange = 16..64,
+        grade: Int = 1
+    ): Float {
+        val rr = rrInput.filter { !it.isNaN() }
+        if (rr.size < 8 || grade < 1) return Float.NaN
+
+        val meanRr = rr.sum() / rr.size
+        val y = MutableList(rr.size) { 0f }
+        var cumulative = 0f
+        for (i in rr.indices) {
+            cumulative += rr[i] - meanRr
+            y[i] = cumulative
+        }
+
+        val boxSizes = (boxsizeShort.toList() + boxsizeLong.toList()).distinct().filter { it >= 2 }
+        if (boxSizes.isEmpty()) return Float.NaN
+
+        val fValues = mutableListOf<Float>()
+        val validSizes = mutableListOf<Int>()
+
+        for (bs in boxSizes) {
+            val trend = FloatArray(rr.size)
+            val lastSegment = (rr.size - 2) / bs
+            for (segment in 0..lastSegment) {
+                val start = segment * bs
+                val endInclusive = if (segment == lastSegment) rr.lastIndex else ((segment + 1) * bs - 1).coerceAtMost(rr.lastIndex)
+                val x = IntArray(endInclusive - start + 1) { idx -> start + idx + 1 }
+                val ySeg = FloatArray(x.size) { idx -> y[start + idx] }
+                val coeff = polyfitLinear(x, ySeg)
+                if (coeff == null) continue
+                val (slope, intercept) = coeff
+                for (idx in x.indices) {
+                    trend[start + idx] = slope * x[idx] + intercept
+                }
+            }
+
+            var sumSq = 0.0
+            for (i in rr.indices) {
+                val d = y[i] - trend[i]
+                sumSq += (d * d)
+            }
+            val f = kotlin.math.sqrt(sumSq / rr.size).toFloat()
+            if (!f.isNaN() && f > 0f) {
+                validSizes += bs
+                fValues += f
+            }
+        }
+
+        val shortPairs = validSizes.zip(fValues).filter { (bs, _) -> bs in boxsizeShort }
+        if (shortPairs.size < 2) return Float.NaN
+
+        val xLog = shortPairs.map { kotlin.math.ln(it.first.toFloat()) }
+        val yLog = shortPairs.map { kotlin.math.ln(it.second) }
+        val alpha = linearRegressionSlope(xLog, yLog)
+
+        return alpha
+    }
+
+    /**
      * MATLAB: [f_pLF, f_pHF, f_LFHF, f_VLF, f_LF, f_HF] = fft_val_fun(HRV_Percentage, 500)
      */
     fun fFftMetrics(rrInput: List<Float>, fs: Float = 500f): FftMetrics {
@@ -358,6 +424,49 @@ object HrvFeatureExtractor {
             out[i] = if (count > 0 && sum > 0f) 60f * count / sum else Float.NaN
         }
         return out
+    }
+
+
+    private fun polyfitLinear(x: IntArray, y: FloatArray): Pair<Float, Float>? {
+        if (x.size != y.size || x.isEmpty()) return null
+
+        val n = x.size.toFloat()
+        val sumX = x.sum().toFloat()
+        val sumY = y.sum()
+        var sumXX = 0f
+        var sumXY = 0f
+        for (i in x.indices) {
+            val xv = x[i].toFloat()
+            val yv = y[i]
+            sumXX += xv * xv
+            sumXY += xv * yv
+        }
+
+        val denom = n * sumXX - sumX * sumX
+        if (denom == 0f) return null
+
+        val slope = (n * sumXY - sumX * sumY) / denom
+        val intercept = (sumY - slope * sumX) / n
+        return slope to intercept
+    }
+
+    private fun linearRegressionSlope(x: List<Float>, y: List<Float>): Float {
+        if (x.size != y.size || x.size < 2) return Float.NaN
+
+        val n = x.size.toFloat()
+        val meanX = x.sum() / n
+        val meanY = y.sum() / n
+
+        var numerator = 0f
+        var denominator = 0f
+        for (i in x.indices) {
+            val dx = x[i] - meanX
+            numerator += dx * (y[i] - meanY)
+            denominator += dx * dx
+        }
+
+        if (denominator == 0f) return Float.NaN
+        return numerator / denominator
     }
 
     private fun splineResample(x: List<Float>, y: List<Float>, step: Float): List<Float> {
