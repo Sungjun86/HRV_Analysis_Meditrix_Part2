@@ -117,6 +117,8 @@ class MainActivity : AppCompatActivity() {
                 val dfa = HrvFeatureExtractor.dfaMetrics(hrvPercentage.map { it.value })
                 val tri = HrvFeatureExtractor.fTriangular(hrvPercentage.map { it.value })
                 val fCd = HrvFeatureExtractor.fCd(hrvPercentage.map { it.value })
+                val dfa = HrvFeatureExtractor.dfaMetrics(hrvPercentage.map { it.value })
+                val tri = HrvFeatureExtractor.fTriangular(hrvPercentage.map { it.value })
 
                 binding.textFpnnValues.text = if (
                     fPnn10.isNaN() && fPnn20.isNaN() && fPnn30.isNaN() && fPnn40.isNaN() && fPnn50.isNaN()
