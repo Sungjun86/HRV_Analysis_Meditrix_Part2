@@ -5,6 +5,13 @@
     android:layout_height="match_parent"
     android:padding="16dp">
 
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guidelineVerticalHalf"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.5" />
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/buttonLoadCsv"
         android:layout_width="0dp"
@@ -30,9 +37,10 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
         android:text="f_HR: - bpm"
         android:textStyle="bold"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/guidelineVerticalHalf"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/buttonLoadCsv" />
 
@@ -40,98 +48,119 @@
         android:id="@+id/textFsdnnValue"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"
         android:text="f_SDNN: - s"
         android:textStyle="bold"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textFhrValue" />
+        app:layout_constraintStart_toStartOf="@id/guidelineVerticalHalf"
+        app:layout_constraintTop_toBottomOf="@id/buttonLoadCsv" />
 
     <TextView
         android:id="@+id/textFrmssdValue"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
+        android:layout_marginEnd="8dp"
         android:text="f_RMSSD: - s"
         android:textStyle="bold"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/guidelineVerticalHalf"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textFsdnnValue" />
+        app:layout_constraintTop_toBottomOf="@id/textFhrValue" />
 
     <TextView
         android:id="@+id/textFpnnValues"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
         android:layout_marginTop="4dp"
         android:text="f_pNN10: -&#10;f_pNN20: -&#10;f_pNN30: -&#10;f_pNN40: -&#10;f_pNN50: -"
         android:textStyle="bold"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textFrmssdValue" />
+        app:layout_constraintStart_toStartOf="@id/guidelineVerticalHalf"
+        app:layout_constraintTop_toBottomOf="@id/textFsdnnValue" />
 
     <TextView
         android:id="@+id/textPoincareValues"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
+        android:layout_marginEnd="8dp"
         android:text="f_SD1: -&#10;f_SD2: -&#10;f_SD1SD2: -"
         android:textStyle="bold"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/guidelineVerticalHalf"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textFpnnValues" />
+        app:layout_constraintTop_toBottomOf="@id/textFrmssdValue" />
 
     <TextView
         android:id="@+id/textFftValues"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
         android:layout_marginTop="4dp"
         android:text="f_pLF: -&#10;f_pHF: -&#10;f_LFHF: -&#10;f_VLF: -&#10;f_LF: -&#10;f_HF: -"
         android:textStyle="bold"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textPoincareValues" />
+        app:layout_constraintStart_toStartOf="@id/guidelineVerticalHalf"
+        app:layout_constraintTop_toBottomOf="@id/textFpnnValues" />
 
     <TextView
         android:id="@+id/textFalphaValue"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
+        android:layout_marginEnd="8dp"
         android:text="f_alpha_1: -&#10;f_alpha_2: -"
         android:textStyle="bold"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/guidelineVerticalHalf"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textFftValues" />
+        app:layout_constraintTop_toBottomOf="@id/textPoincareValues" />
 
     <TextView
         android:id="@+id/textFtriTinnValue"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
         android:layout_marginTop="4dp"
         android:text="f_TRI: -&#10;f_TINN: -"
         android:textStyle="bold"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textFalphaValue" />
+        app:layout_constraintStart_toStartOf="@id/guidelineVerticalHalf"
+        app:layout_constraintTop_toBottomOf="@id/textFftValues" />
 
     <TextView
         android:id="@+id/textFcdValue"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
+        android:layout_marginEnd="8dp"
         android:text="f_cd: -"
         android:textStyle="bold"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/guidelineVerticalHalf"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textFtriTinnValue" />
+        app:layout_constraintTop_toBottomOf="@id/textFalphaValue" />
 
     <TextView
         android:id="@+id/textFsampenValue"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
         android:layout_marginTop="4dp"
         android:text="f_sampen: -"
         android:textStyle="bold"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="@id/guidelineVerticalHalf"
+        app:layout_constraintTop_toBottomOf="@id/textFtriTinnValue" />
+
+    <TextView
+        android:id="@+id/textFapenValue"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="8dp"
+        android:text="f_apen: -"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toStartOf="@id/guidelineVerticalHalf"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/textFcdValue" />
 
@@ -143,7 +172,7 @@
         android:text="원본 CSV 그래프"
         android:textStyle="bold"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textFsampenValue" />
+        app:layout_constraintTop_toBottomOf="@id/textFapenValue" />
 
     <com.example.csvgraph.LineGraphView
         android:id="@+id/rawGraphView"

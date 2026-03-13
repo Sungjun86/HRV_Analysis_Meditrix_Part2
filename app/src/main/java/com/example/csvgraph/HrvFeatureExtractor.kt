@@ -364,6 +364,46 @@ object HrvFeatureExtractor {
         return TriangularMetrics(tri = tri, tinn = tinn)
     }
 
+
+    /**
+     * MATLAB reference: f_apen = ApEn(HRV_Percentage)
+     * Default: num=0, m=2, r=0.2*SDNN(RR)
+     */
+    fun fApen(rrInput: List<Float>, m: Int = 2, r: Float? = null): Float {
+        val rr = rrInput.filter { !it.isNaN() }
+        val n = rr.size
+        if (n <= m + 1 || m < 1) return Float.NaN
+
+        val sdnn = nanStd(rr, flag = 0)
+        val threshold = r ?: (0.2f * sdnn)
+        if (threshold.isNaN() || threshold <= 0f) return Float.NaN
+
+        val nM = n - m + 1
+        val nM1 = n - m
+        if (nM <= 0 || nM1 <= 0) return Float.NaN
+
+        fun phi(dim: Int): Double {
+            val countLen = n - dim + 1
+            val c = DoubleArray(countLen)
+            for (i in 0 until countLen) {
+                var cnt = 0
+                for (j in 0 until countLen) {
+                    var maxDist = 0f
+                    for (k in 0 until dim) {
+                        val d = abs(rr[i + k] - rr[j + k])
+                        if (d > maxDist) maxDist = d
+                        if (maxDist > threshold) break
+                    }
+                    if (maxDist <= threshold) cnt++
+                }
+                c[i] = cnt.toDouble() / countLen.toDouble()
+            }
+            return c.map { kotlin.math.ln(it.coerceAtLeast(1e-12)) }.average()
+        }
+
+        return (phi(m) - phi(m + 1)).toFloat()
+    }
+
     /**
      * MATLAB reference: f_sampen = sampen(HRV_Percentage, 2, 0.2)
      * Uses Chebyshev distance by default.
