@@ -125,6 +125,17 @@
         app:layout_constraintTop_toBottomOf="@id/textFtriTinnValue" />
 
     <TextView
+        android:id="@+id/textFsampenValue"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="f_sampen: -"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/textFcdValue" />
+
+    <TextView
         android:id="@+id/textRawTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -132,7 +143,7 @@
         android:text="원본 CSV 그래프"
         android:textStyle="bold"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textFcdValue" />
+        app:layout_constraintTop_toBottomOf="@id/textFsampenValue" />
 
     <com.example.csvgraph.LineGraphView
         android:id="@+id/rawGraphView"

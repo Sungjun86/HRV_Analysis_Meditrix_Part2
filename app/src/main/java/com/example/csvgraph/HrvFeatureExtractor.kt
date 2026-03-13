@@ -1,6 +1,8 @@
 package com.example.csvgraph
 
+import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.ln
 import kotlin.math.sqrt
 
 object HrvFeatureExtractor {
@@ -360,6 +362,54 @@ object HrvFeatureExtractor {
 
         val tinn = (m - n) * w
         return TriangularMetrics(tri = tri, tinn = tinn)
+    }
+
+    /**
+     * MATLAB reference: f_sampen = sampen(HRV_Percentage, 2, 0.2)
+     * Uses Chebyshev distance by default.
+     */
+    fun fSampen(signalInput: List<Float>, m: Int = 2, r: Float = 0.2f): Float {
+        val signal = signalInput.filter { !it.isNaN() }
+        val n = signal.size
+        if (n < 4 || m < 1 || m >= n || r <= 0f) return Float.NaN
+
+        val sigma = nanStd(signal, flag = 0)
+        if (sigma.isNaN() || sigma <= 0f) return Float.NaN
+        val threshold = r * sigma
+
+        fun countMatches(dim: Int): Int {
+            val countLen = n - dim + 1
+            var matches = 0
+            for (i in 0 until countLen - 1) {
+                for (j in (i + 1) until countLen) {
+                    var maxDist = 0f
+                    for (k in 0 until dim) {
+                        val d = abs(signal[i + k] - signal[j + k])
+                        if (d > maxDist) maxDist = d
+                        if (maxDist > threshold) break
+                    }
+                    if (maxDist <= threshold) matches++
+                }
+            }
+            return matches
+        }
+
+        val b = countMatches(m)
+        val a = countMatches(m + 1)
+
+        val value = if (a > 0 && b > 0 && (n - m - 1) > 0) {
+            val ratio = (a.toDouble() / b.toDouble()) * ((n - m + 1).toDouble() / (n - m - 1).toDouble())
+            -ln(ratio).toFloat()
+        } else {
+            Float.POSITIVE_INFINITY
+        }
+
+        return if (value.isInfinite()) {
+            if ((n - m - 1) <= 0 || (n - m) <= 0) Float.NaN
+            else -ln(2.0 / ((n - m - 1).toDouble() * (n - m).toDouble())).toFloat()
+        } else {
+            value
+        }
     }
 
     /**
