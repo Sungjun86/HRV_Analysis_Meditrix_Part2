@@ -40,6 +40,11 @@ object HrvFeatureExtractor {
         val cd: Float
     )
 
+    data class ShannMetrics(
+        val shann1: Float,
+        val shann2: Float
+    )
+
     /**
      * MATLAB HR(RR,num,segment) 동작을 Kotlin으로 구현.
      * RR 단위: seconds
@@ -364,6 +369,51 @@ object HrvFeatureExtractor {
         return TriangularMetrics(tri = tri, tinn = tinn)
     }
 
+
+    /**
+     * MATLAB reference: shann = wentropy(HRV_Percentage, Level=1)
+     * Returns first two scale entropies as f_shann1 and f_shann2.
+     */
+    fun fShann(rrInput: List<Float>): ShannMetrics {
+        val x = rrInput.filter { !it.isNaN() }
+        if (x.size < 4) return ShannMetrics(Float.NaN, Float.NaN)
+
+        // Level=1 decomposition (periodic, Haar-like single level)
+        val nEven = x.size - (x.size % 2)
+        if (nEven < 4) return ShannMetrics(Float.NaN, Float.NaN)
+
+        val approx = mutableListOf<Float>()
+        val detail = mutableListOf<Float>()
+        var i = 0
+        while (i < nEven) {
+            val a = (x[i] + x[i + 1]) / 2f
+            val d = (x[i] - x[i + 1]) / 2f
+            approx += a
+            detail += d
+            i += 2
+        }
+
+        fun normalizedShannon(values: List<Float>): Float {
+            if (values.isEmpty()) return Float.NaN
+            val energy = values.map { it * it }
+            val total = energy.sum()
+            if (total <= 0f) return 0f
+            val n = energy.size
+            val p = energy.map { it / total }
+            var h = 0.0
+            for (pi in p) {
+                if (pi > 0f) h -= pi * ln(pi)
+            }
+            val denom = ln(n.toFloat())
+            return if (denom > 0f) (h / denom).toFloat() else 0f
+        }
+
+        // wentropy(Level=1) equivalent: detail first, approximation second
+        return ShannMetrics(
+            shann1 = normalizedShannon(detail),
+            shann2 = normalizedShannon(approx)
+        )
+    }
 
     /**
      * MATLAB reference: f_apen = ApEn(HRV_Percentage)
