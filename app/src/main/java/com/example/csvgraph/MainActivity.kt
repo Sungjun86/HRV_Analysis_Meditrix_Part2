@@ -123,6 +123,7 @@ class MainActivity : AppCompatActivity() {
                 val fM1 = HrvFeatureExtractor.fM1(hrvPercentage.map { it.value })
                 val fM2 = HrvFeatureExtractor.fM2(hrvPercentage.map { it.value })
                 val fM3 = HrvFeatureExtractor.fM3(hrvPercentage.map { it.value })
+                val fAutoc = HrvFeatureExtractor.fAutoc(hrvPercentage.map { it.value })
 
                 binding.textFpnnValues.text = if (
                     fPnn10.isNaN() && fPnn20.isNaN() && fPnn30.isNaN() && fPnn40.isNaN() && fPnn50.isNaN()
@@ -209,6 +210,12 @@ class MainActivity : AppCompatActivity() {
                     "f_m1: 계산 불가\nf_m2: 계산 불가\nf_m3: 계산 불가"
                 } else {
                     String.format("f_m1: %.4f\nf_m2: %.4f\nf_m3: %.4f", fM1, fM2, fM3)
+                }
+
+                binding.textFautocValue.text = if (fAutoc.isNaN()) {
+                    "f_autoc: 계산 불가"
+                } else {
+                    String.format("f_autoc: %.4f", fAutoc)
                 }
 
                 // 4) interpolate HRV_Percentage by 4Hz cubic spline

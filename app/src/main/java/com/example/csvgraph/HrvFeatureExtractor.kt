@@ -445,6 +445,36 @@ object HrvFeatureExtractor {
     fun fM3(yInput: List<Float>): Float = stdMoment(yInput, 3)
 
     /**
+     * MATLAB reference:
+     * ac = autocorr(HRV_Percentage);
+     * f_autoc = max(ac(2:end,1));
+     */
+    fun fAutoc(signalInput: List<Float>, numLags: Int? = null): Float {
+        val signal = signalInput.filter { !it.isNaN() }
+        val n = signal.size
+        if (n < 2) return Float.NaN
+
+        val mean = signal.sum() / n
+        val centered = DoubleArray(n) { i -> (signal[i] - mean).toDouble() }
+        val acf0 = centered.sumOf { it * it } / n.toDouble()
+        if (acf0 <= 0.0) return Float.NaN
+
+        val maxLag = (numLags ?: minOf(20, n - 1)).coerceIn(1, n - 1)
+        var maxAc = Double.NEGATIVE_INFINITY
+
+        for (lag in 1..maxLag) {
+            var cross = 0.0
+            for (t in 0 until (n - lag)) {
+                cross += centered[t] * centered[t + lag]
+            }
+            val acLag = (cross / n.toDouble()) / acf0
+            if (acLag > maxAc) maxAc = acLag
+        }
+
+        return if (maxAc.isFinite()) maxAc.toFloat() else Float.NaN
+    }
+
+    /**
      * MATLAB reference: f_apen = ApEn(HRV_Percentage)
      * Default: num=0, m=2, r=0.2*SDNN(RR)
      */

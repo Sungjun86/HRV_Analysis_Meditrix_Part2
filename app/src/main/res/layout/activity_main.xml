@@ -178,6 +178,18 @@
         app:layout_constraintTop_toBottomOf="@id/textFsampenValue" />
 
     <TextView
+        android:id="@+id/textFautocValue"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="4dp"
+        android:text="f_autoc: -"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="@id/guidelineVerticalHalf"
+        app:layout_constraintTop_toBottomOf="@id/textFshannValues" />
+
+    <TextView
         android:id="@+id/textFmValues"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
@@ -195,7 +207,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         app:barrierDirection="bottom"
-        app:constraint_referenced_ids="textFshannValues,textFmValues" />
+        app:constraint_referenced_ids="textFmValues,textFautocValue" />
 
     <TextView
         android:id="@+id/textRawTitle"
