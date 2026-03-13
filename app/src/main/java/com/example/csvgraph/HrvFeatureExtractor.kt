@@ -33,6 +33,11 @@ object HrvFeatureExtractor {
         val tinn: Float
     )
 
+
+    data class CdMetrics(
+        val cd: Float
+    )
+
     /**
      * MATLAB HR(RR,num,segment) 동작을 Kotlin으로 구현.
      * RR 단위: seconds
@@ -358,6 +363,77 @@ object HrvFeatureExtractor {
     }
 
     /**
+     * MATLAB reference: cdim = CD(HRV_Percentage,m,r)
+     */
+    fun fCd(rrInput: List<Float>, m: Int = 10, r: List<Float> = (50..100).map { it / 1000f }): Float {
+        if (rrInput.isEmpty() || m < 1 || r.isEmpty()) return Float.NaN
+
+        val rrRaw = rrInput.filter { !it.isNaN() }
+        if (rrRaw.size <= m) return Float.NaN
+
+        val median = rrRaw.sorted()[rrRaw.size / 2]
+        val rr = if (median > 10f) rrRaw.map { it / 1000f } else rrRaw
+        val n = rr.size
+
+        val d = Array(n) { DoubleArray(2 * n) { Double.NaN } }
+        for (i in 0 until n) {
+            val start = n - i
+            val end = 2 * n - i - 1
+            var col = start
+            for (j in 0 until n) {
+                d[i][col] = ((rr[i] - rr[j]) * (rr[i] - rr[j])).toDouble()
+                col++
+            }
+            if (col - 1 != end) {
+                // no-op, just keeps parity with MATLAB index construction
+            }
+        }
+
+        val dTrim = Array(n) { row -> DoubleArray(n - 1) { col -> d[row][col] } }
+
+        val dVec = mutableListOf<Double>()
+        for (col in 0 until (n - 1)) {
+            for (row in 0 until n) {
+                dVec += dTrim[row][col]
+            }
+        }
+
+        val filtered = movingFilterSum(dVec, m)
+
+        val D = Array(n) { DoubleArray(n - 1) { Double.NaN } }
+        var k = 0
+        for (col in 0 until (n - 1)) {
+            for (row in 0 until n) {
+                D[row][col] = filtered[k++]
+            }
+        }
+
+        val denom = (n - m + 1) * (n - m)
+        if (denom <= 0) return Float.NaN
+
+        val cValues = mutableListOf<Double>()
+        for (rv in r) {
+            val thr = rv * rv
+            var count = 0
+            for (row in D.indices) {
+                for (col in D[row].indices) {
+                    val v = D[row][col]
+                    if (!v.isNaN() && v <= thr) count++
+                }
+            }
+            cValues += (2.0 * count) / denom.toDouble()
+        }
+
+        val pairs = r.zip(cValues).filter { it.second > 0.0f }
+        if (pairs.size < 2) return Float.NaN
+
+        val x = pairs.map { kotlin.math.log10(it.first.toDouble()) }
+        val y = pairs.map { kotlin.math.log10(it.second) }
+        return linearRegressionSlopeDouble(x, y).toFloat()
+    }
+
+
+    /**
      * MATLAB: [f_pLF, f_pHF, f_LFHF, f_VLF, f_LF, f_HF] = fft_val_fun(HRV_Percentage, 500)
      */
     fun fFftMetrics(rrInput: List<Float>, fs: Float = 500f): FftMetrics {
@@ -573,6 +649,44 @@ object HrvFeatureExtractor {
         if (x1 == x0) return y0
         val t = (x - x0) / (x1 - x0)
         return y0 + t * (y1 - y0)
+    }
+
+    private fun movingFilterSum(values: List<Double>, m: Int): List<Double> {
+        val out = MutableList(values.size) { Double.NaN }
+        var sum = 0.0
+        var nanCount = 0
+        val window = ArrayDeque<Double>()
+
+        for (i in values.indices) {
+            val v = values[i]
+            window.addLast(v)
+            if (v.isNaN()) nanCount++ else sum += v
+
+            if (window.size > m) {
+                val old = window.removeFirst()
+                if (old.isNaN()) nanCount-- else sum -= old
+            }
+
+            out[i] = if (nanCount > 0) Double.NaN else sum
+        }
+        return out
+    }
+
+    private fun linearRegressionSlopeDouble(x: List<Double>, y: List<Double>): Double {
+        if (x.size != y.size || x.size < 2) return Double.NaN
+        val n = x.size.toDouble()
+        val meanX = x.sum() / n
+        val meanY = y.sum() / n
+
+        var num = 0.0
+        var den = 0.0
+        for (i in x.indices) {
+            val dx = x[i] - meanX
+            num += dx * (y[i] - meanY)
+            den += dx * dx
+        }
+        if (den == 0.0) return Double.NaN
+        return num / den
     }
 
     private fun polyfitLinear(x: IntArray, y: FloatArray): Pair<Float, Float>? {
