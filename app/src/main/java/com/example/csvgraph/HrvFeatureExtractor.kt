@@ -3,6 +3,7 @@ package com.example.csvgraph
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.ln
+import kotlin.math.pow
 import kotlin.math.sqrt
 
 object HrvFeatureExtractor {
@@ -414,6 +415,34 @@ object HrvFeatureExtractor {
             shann2 = normalizedShannon(approx)
         )
     }
+
+
+    fun stdMoment(yInput: List<Float>, order: Int): Float {
+        val y = yInput.filter { !it.isNaN() }
+        val n = y.size
+        if (n == 0 || order < 1) return Float.NaN
+
+        val mu = y.sum() / n
+        var nom = 0.0
+        var varTerm = 0.0
+        for (v in y) {
+            val d = (v - mu).toDouble()
+            nom += d.pow(order.toDouble())
+            varTerm += d * d
+        }
+
+        nom /= n.toDouble()
+        val denBase = varTerm / n.toDouble()
+        if (denBase <= 0.0) return Float.NaN
+
+        val den = denBase.pow(order / 2.0)
+        if (den == 0.0) return Float.NaN
+        return (nom / den).toFloat()
+    }
+
+    fun fM1(yInput: List<Float>): Float = stdMoment(yInput, 1)
+    fun fM2(yInput: List<Float>): Float = stdMoment(yInput, 2)
+    fun fM3(yInput: List<Float>): Float = stdMoment(yInput, 3)
 
     /**
      * MATLAB reference: f_apen = ApEn(HRV_Percentage)

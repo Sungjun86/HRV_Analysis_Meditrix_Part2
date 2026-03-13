@@ -120,6 +120,9 @@ class MainActivity : AppCompatActivity() {
                 val fSampen = HrvFeatureExtractor.fSampen(hrvPercentage.map { it.value }, m = 2, r = 0.2f)
                 val fApen = HrvFeatureExtractor.fApen(hrvPercentage.map { it.value })
                 val shann = HrvFeatureExtractor.fShann(hrvPercentage.map { it.value })
+                val fM1 = HrvFeatureExtractor.fM1(hrvPercentage.map { it.value })
+                val fM2 = HrvFeatureExtractor.fM2(hrvPercentage.map { it.value })
+                val fM3 = HrvFeatureExtractor.fM3(hrvPercentage.map { it.value })
 
                 binding.textFpnnValues.text = if (
                     fPnn10.isNaN() && fPnn20.isNaN() && fPnn30.isNaN() && fPnn40.isNaN() && fPnn50.isNaN()
@@ -200,6 +203,12 @@ class MainActivity : AppCompatActivity() {
                     "f_shann1: 계산 불가\nf_shann2: 계산 불가"
                 } else {
                     String.format("f_shann1: %.4f\nf_shann2: %.4f", shann.shann1, shann.shann2)
+                }
+
+                binding.textFmValues.text = if (fM1.isNaN() && fM2.isNaN() && fM3.isNaN()) {
+                    "f_m1: 계산 불가\nf_m2: 계산 불가\nf_m3: 계산 불가"
+                } else {
+                    String.format("f_m1: %.4f\nf_m2: %.4f\nf_m3: %.4f", fM1, fM2, fM3)
                 }
 
                 // 4) interpolate HRV_Percentage by 4Hz cubic spline

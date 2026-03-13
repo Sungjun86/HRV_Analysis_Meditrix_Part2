@@ -177,13 +177,25 @@
         app:layout_constraintStart_toStartOf="@id/guidelineVerticalHalf"
         app:layout_constraintTop_toBottomOf="@id/textFsampenValue" />
 
+    <TextView
+        android:id="@+id/textFmValues"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="8dp"
+        android:text="f_m1: -&#10;f_m2: -&#10;f_m3: -"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toStartOf="@id/guidelineVerticalHalf"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/textFapenValue" />
+
 
     <androidx.constraintlayout.widget.Barrier
         android:id="@+id/metricsBottomBarrier"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         app:barrierDirection="bottom"
-        app:constraint_referenced_ids="textFapenValue,textFshannValues" />
+        app:constraint_referenced_ids="textFshannValues,textFmValues" />
 
     <TextView
         android:id="@+id/textRawTitle"
