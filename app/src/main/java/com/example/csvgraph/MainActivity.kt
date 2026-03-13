@@ -229,20 +229,8 @@ class MainActivity : AppCompatActivity() {
                 val hrvInterpolation = HrvSignalProcessor.detrendLinear(interpolated)
                 latestHrvInterpolation = hrvInterpolation
 
-                val startTime = interpolated.first().timeSec
-                val step = if (interpolated.size > 1) {
-                    interpolated[1].timeSec - interpolated[0].timeSec
-                } else {
-                    0.25f
-                }
-
-                // Blue: interpolated(HRV_Percentage), Red: HRV_Interpolation(detrended)
-                binding.interpolatedGraphView.setValues(
-                    newValues = interpolated.map { it.value },
-                    startXSec = startTime,
-                    stepXSec = step,
-                    overlayValues = hrvInterpolation.map { it.value }
-                )
+                // 4Hz Interpolation 그래프는 UI에서 제거되었으므로
+                // 보간/디트렌드 결과는 CSV 저장용 데이터만 유지
             } finally {
                 setLoadingState(false)
             }

@@ -32,6 +32,55 @@
         app:layout_constraintStart_toEndOf="@id/buttonLoadCsv"
         app:layout_constraintTop_toTopOf="parent" />
 
+
+    <EditText
+        android:id="@+id/editInsum"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
+        android:hint="INSUM"
+        android:inputType="numberDecimal"
+        app:layout_constraintEnd_toStartOf="@id/guidelineVerticalHalf"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/buttonLoadCsv" />
+
+    <EditText
+        android:id="@+id/editAge"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"
+        android:hint="AGE"
+        android:inputType="number"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="@id/guidelineVerticalHalf"
+        app:layout_constraintTop_toBottomOf="@id/buttonLoadCsv" />
+
+    <RadioGroup
+        android:id="@+id/radioGender"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/editInsum">
+
+        <RadioButton
+            android:id="@+id/radioMale"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="Male (0)" />
+
+        <RadioButton
+            android:id="@+id/radioFemale"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Female (2)" />
+    </RadioGroup>
+
     <TextView
         android:id="@+id/textFhrValue"
         android:layout_width="0dp"
@@ -42,7 +91,7 @@
         android:textStyle="bold"
         app:layout_constraintEnd_toStartOf="@id/guidelineVerticalHalf"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/buttonLoadCsv" />
+        app:layout_constraintTop_toBottomOf="@id/radioGender" />
 
     <TextView
         android:id="@+id/textFsdnnValue"
@@ -54,7 +103,7 @@
         android:textStyle="bold"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="@id/guidelineVerticalHalf"
-        app:layout_constraintTop_toBottomOf="@id/buttonLoadCsv" />
+        app:layout_constraintTop_toBottomOf="@id/radioGender" />
 
     <TextView
         android:id="@+id/textFrmssdValue"
@@ -230,28 +279,6 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/textRawTitle" />
 
-    <TextView
-        android:id="@+id/textInterpolatedTitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="4Hz Interpolation 그래프"
-        android:textStyle="bold"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/rawGraphView" />
-
-    <com.example.csvgraph.LineGraphView
-        android:id="@+id/interpolatedGraphView"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        app:layout_constraintBottom_toTopOf="@id/progressProcessing"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHeight_default="percent"
-        app:layout_constraintHeight_percent="0.25"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textInterpolatedTitle" />
-
     <ProgressBar
         android:id="@+id/progressProcessing"
         style="?android:attr/progressBarStyleHorizontal"
@@ -263,6 +290,6 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/interpolatedGraphView" />
+        app:layout_constraintTop_toBottomOf="@id/rawGraphView" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
