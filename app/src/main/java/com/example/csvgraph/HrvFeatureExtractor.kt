@@ -21,6 +21,12 @@ object HrvFeatureExtractor {
         val hf: Float
     )
 
+
+    data class DfaMetrics(
+        val alpha1: Float,
+        val alpha2: Float
+    )
+
     /**
      * MATLAB HR(RR,num,segment) 동작을 Kotlin으로 구현.
      * RR 단위: seconds
@@ -205,18 +211,17 @@ object HrvFeatureExtractor {
     fun fPnn50(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 50, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
 
     /**
-     * MATLAB reference: alpha = DFA(HRV_Percentage)
-     * 기본 box size: short=4..16, long=16..64, grade=1
-     * 반환값은 alpha(1) (short-term scaling exponent) 사용.
+     * MATLAB reference: [alpha_1, alpha_2] from DFA(HRV_Percentage)
+     * default: short=4..16, long=16..64, grade=1
      */
-    fun fAlpha(
+    fun dfaMetrics(
         rrInput: List<Float>,
         boxsizeShort: IntRange = 4..16,
         boxsizeLong: IntRange = 16..64,
         grade: Int = 1
-    ): Float {
+    ): DfaMetrics {
         val rr = rrInput.filter { !it.isNaN() }
-        if (rr.size < 8 || grade < 1) return Float.NaN
+        if (rr.size < 8 || grade != 1) return DfaMetrics(Float.NaN, Float.NaN)
 
         val meanRr = rr.sum() / rr.size
         val y = MutableList(rr.size) { 0f }
@@ -227,10 +232,9 @@ object HrvFeatureExtractor {
         }
 
         val boxSizes = (boxsizeShort.toList() + boxsizeLong.toList()).distinct().filter { it >= 2 }
-        if (boxSizes.isEmpty()) return Float.NaN
+        if (boxSizes.isEmpty()) return DfaMetrics(Float.NaN, Float.NaN)
 
-        val fValues = mutableListOf<Float>()
-        val validSizes = mutableListOf<Int>()
+        val fByBox = mutableMapOf<Int, Float>()
 
         for (bs in boxSizes) {
             val trend = FloatArray(rr.size)
@@ -240,8 +244,7 @@ object HrvFeatureExtractor {
                 val endInclusive = if (segment == lastSegment) rr.lastIndex else ((segment + 1) * bs - 1).coerceAtMost(rr.lastIndex)
                 val x = IntArray(endInclusive - start + 1) { idx -> start + idx + 1 }
                 val ySeg = FloatArray(x.size) { idx -> y[start + idx] }
-                val coeff = polyfitLinear(x, ySeg)
-                if (coeff == null) continue
+                val coeff = polyfitLinear(x, ySeg) ?: continue
                 val (slope, intercept) = coeff
                 for (idx in x.indices) {
                     trend[start + idx] = slope * x[idx] + intercept
@@ -251,24 +254,44 @@ object HrvFeatureExtractor {
             var sumSq = 0.0
             for (i in rr.indices) {
                 val d = y[i] - trend[i]
-                sumSq += (d * d)
+                sumSq += d * d
             }
             val f = kotlin.math.sqrt(sumSq / rr.size).toFloat()
             if (!f.isNaN() && f > 0f) {
-                validSizes += bs
-                fValues += f
+                fByBox[bs] = f
             }
         }
 
-        val shortPairs = validSizes.zip(fValues).filter { (bs, _) -> bs in boxsizeShort }
-        if (shortPairs.size < 2) return Float.NaN
+        val shortPairs = boxsizeShort.mapNotNull { bs -> fByBox[bs]?.let { bs to it } }
+        val longPairs = boxsizeLong.mapNotNull { bs -> fByBox[bs]?.let { bs to it } }
 
-        val xLog = shortPairs.map { kotlin.math.ln(it.first.toFloat()) }
-        val yLog = shortPairs.map { kotlin.math.ln(it.second) }
-        val alpha = linearRegressionSlope(xLog, yLog)
+        val alpha1 = if (shortPairs.size >= 2) {
+            linearRegressionSlope(
+                shortPairs.map { kotlin.math.ln(it.first.toFloat()) },
+                shortPairs.map { kotlin.math.ln(it.second) }
+            )
+        } else {
+            Float.NaN
+        }
 
-        return alpha
+        val alpha2 = if (longPairs.size >= 2) {
+            linearRegressionSlope(
+                longPairs.map { kotlin.math.ln(it.first.toFloat()) },
+                longPairs.map { kotlin.math.ln(it.second) }
+            )
+        } else {
+            Float.NaN
+        }
+
+        return DfaMetrics(alpha1 = alpha1, alpha2 = alpha2)
     }
+
+    fun fAlpha(
+        rrInput: List<Float>,
+        boxsizeShort: IntRange = 4..16,
+        boxsizeLong: IntRange = 16..64,
+        grade: Int = 1
+    ): Float = dfaMetrics(rrInput, boxsizeShort, boxsizeLong, grade).alpha1
 
     /**
      * MATLAB: [f_pLF, f_pHF, f_LFHF, f_VLF, f_LF, f_HF] = fft_val_fun(HRV_Percentage, 500)
