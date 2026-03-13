@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -12,7 +14,7 @@ import com.example.csvgraph.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private var latestFeatureCsv: String? = null
+    private var latestProcessedMetrics: ProcessedMetrics? = null
 
     private data class ProcessedMetrics(
         val rawValues: List<Float>,
@@ -58,6 +60,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        setupInputControls()
         setLoadingState(false)
 
         binding.buttonLoadCsv.setOnClickListener {
@@ -65,18 +69,57 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.buttonSaveFeatureCsv.setOnClickListener {
-            if (latestFeatureCsv == null) {
-                Toast.makeText(this, "먼저 CSV를 불러와 Feature를 계산하세요.", Toast.LENGTH_SHORT).show()
+            if (!isInputReady() || latestProcessedMetrics == null) {
+                Toast.makeText(this, "INSUM/AGE/GENDER 입력 후 CSV를 불러와 Feature를 계산하세요.", Toast.LENGTH_SHORT).show()
             } else {
                 createFeatureCsvLauncher.launch("hrv_features.csv")
             }
         }
     }
 
+    private fun setupInputControls() {
+        val insumOptions = listOf("INSUM 선택") + (1..30).map { it.toString() }
+        val ageOptions = listOf("AGE 선택") + (1..120).map { it.toString() }
+
+        binding.spinnerInsum.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, insumOptions).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        binding.spinnerAge.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, ageOptions).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+
+        val spinnerListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                updateSaveButtonEnabled()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {
+                updateSaveButtonEnabled()
+            }
+        }
+
+        binding.spinnerInsum.onItemSelectedListener = spinnerListener
+        binding.spinnerAge.onItemSelectedListener = spinnerListener
+        binding.radioGender.clearCheck()
+        binding.radioGender.setOnCheckedChangeListener { _, _ -> updateSaveButtonEnabled() }
+        updateSaveButtonEnabled()
+    }
+
     private fun setLoadingState(isLoading: Boolean) {
         binding.progressProcessing.visibility = if (isLoading) View.VISIBLE else View.GONE
         binding.buttonLoadCsv.isEnabled = !isLoading
-        binding.buttonSaveFeatureCsv.isEnabled = !isLoading
+        updateSaveButtonEnabled(isLoading)
+    }
+
+    private fun isInputReady(): Boolean {
+        val insum = getSelectedInsum()
+        val age = getSelectedAge()
+        val gender = getGenderCode()
+        return insum.isNotEmpty() && age.isNotEmpty() && gender.isNotEmpty()
+    }
+
+    private fun updateSaveButtonEnabled(isLoading: Boolean = binding.progressProcessing.visibility == View.VISIBLE) {
+        binding.buttonSaveFeatureCsv.isEnabled = !isLoading && isInputReady() && latestProcessedMetrics != null
     }
 
     private fun renderCsv(uri: Uri) {
@@ -94,8 +137,10 @@ class MainActivity : AppCompatActivity() {
                         try {
                             if (metrics == null) {
                                 Toast.makeText(this, "HRV 데이터가 충분하지 않습니다. (최소 2개)", Toast.LENGTH_SHORT).show()
+                                latestProcessedMetrics = null
                                 return@runOnUiThread
                             }
+                            latestProcessedMetrics = metrics
                             renderMetrics(metrics)
                         } finally {
                             setLoadingState(false)
@@ -105,6 +150,7 @@ class MainActivity : AppCompatActivity() {
                 .onFailure { error ->
                     runOnUiThread {
                         try {
+                            latestProcessedMetrics = null
                             Toast.makeText(this, "CSV 처리 실패: ${error.message}", Toast.LENGTH_SHORT).show()
                         } finally {
                             setLoadingState(false)
@@ -266,40 +312,7 @@ class MainActivity : AppCompatActivity() {
             String.format("f_autoc: %.4f", metrics.fAutoc)
         }
 
-        latestFeatureCsv = buildFeatureCsv(
-            insum = binding.editInsum.text?.toString().orEmpty(),
-            age = binding.editAge.text?.toString().orEmpty(),
-            genderCode = getGenderCode(),
-            fHr = metrics.fHr,
-            fSdnn = metrics.fSdnn,
-            fRmssd = metrics.fRmssd,
-            fPnn10 = metrics.fPnn10,
-            fPnn20 = metrics.fPnn20,
-            fPnn30 = metrics.fPnn30,
-            fPnn40 = metrics.fPnn40,
-            fPnn50 = metrics.fPnn50,
-            fSd1 = metrics.poincare.sd1,
-            fSd2 = metrics.poincare.sd2,
-            fSd1Sd2 = metrics.poincare.sd1Sd2Ratio,
-            fPLf = metrics.fft.pLf,
-            fPHf = metrics.fft.pHf,
-            fLfHf = metrics.fft.lfHfRatio,
-            fVLf = metrics.fft.vLf,
-            fLf = metrics.fft.lf,
-            fHf = metrics.fft.hf,
-            fAlpha1 = metrics.dfa.alpha1,
-            fAlpha2 = metrics.dfa.alpha2,
-            fCd = metrics.fCd,
-            fTri = metrics.tri.tri,
-            fTinn = metrics.tri.tinn,
-            fApen = metrics.fApen,
-            fSampen = metrics.fSampen,
-            fShann1 = metrics.shann.shann1,
-            fShann2 = metrics.shann.shann2,
-            fM1 = metrics.fM1,
-            fM3 = metrics.fM3,
-            fAutoc = metrics.fAutoc
-        )
+        updateSaveButtonEnabled()
     }
 
     private fun toRrSeconds(values: List<Float>): List<Float> {
@@ -309,8 +322,20 @@ class MainActivity : AppCompatActivity() {
         return if (assumeMs) values.map { it / 1000f } else values
     }
 
+    private fun getSelectedInsum(): String {
+        return binding.spinnerInsum.selectedItem?.toString()?.takeIf { it != "INSUM 선택" } ?: ""
+    }
+
+    private fun getSelectedAge(): String {
+        return binding.spinnerAge.selectedItem?.toString()?.takeIf { it != "AGE 선택" } ?: ""
+    }
+
     private fun getGenderCode(): String {
-        return if (binding.radioFemale.isChecked) "2" else "0"
+        return when (binding.radioGender.checkedRadioButtonId) {
+            binding.radioMale.id -> "0"
+            binding.radioFemale.id -> "2"
+            else -> ""
+        }
     }
 
     private fun formatCsvValue(value: Float): String {
@@ -397,7 +422,46 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveFeatureCsv(uri: Uri) {
-        val csvText = latestFeatureCsv ?: return
+        val metrics = latestProcessedMetrics ?: return
+        val insum = getSelectedInsum()
+        val age = getSelectedAge()
+        val genderCode = getGenderCode()
+        if (insum.isEmpty() || age.isEmpty() || genderCode.isEmpty()) return
+
+        val csvText = buildFeatureCsv(
+            insum = insum,
+            age = age,
+            genderCode = genderCode,
+            fHr = metrics.fHr,
+            fSdnn = metrics.fSdnn,
+            fRmssd = metrics.fRmssd,
+            fPnn10 = metrics.fPnn10,
+            fPnn20 = metrics.fPnn20,
+            fPnn30 = metrics.fPnn30,
+            fPnn40 = metrics.fPnn40,
+            fPnn50 = metrics.fPnn50,
+            fSd1 = metrics.poincare.sd1,
+            fSd2 = metrics.poincare.sd2,
+            fSd1Sd2 = metrics.poincare.sd1Sd2Ratio,
+            fPLf = metrics.fft.pLf,
+            fPHf = metrics.fft.pHf,
+            fLfHf = metrics.fft.lfHfRatio,
+            fVLf = metrics.fft.vLf,
+            fLf = metrics.fft.lf,
+            fHf = metrics.fft.hf,
+            fAlpha1 = metrics.dfa.alpha1,
+            fAlpha2 = metrics.dfa.alpha2,
+            fCd = metrics.fCd,
+            fTri = metrics.tri.tri,
+            fTinn = metrics.tri.tinn,
+            fApen = metrics.fApen,
+            fSampen = metrics.fSampen,
+            fShann1 = metrics.shann.shann1,
+            fShann2 = metrics.shann.shann2,
+            fM1 = metrics.fM1,
+            fM3 = metrics.fM3,
+            fAutoc = metrics.fAutoc
+        )
 
         runCatching {
             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
