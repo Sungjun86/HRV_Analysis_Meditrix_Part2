@@ -14,6 +14,32 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var latestFeatureCsv: String? = null
 
+    private data class ProcessedMetrics(
+        val rawValues: List<Float>,
+        val startXSec: Float,
+        val stepXSec: Float,
+        val fHr: Float,
+        val fSdnn: Float,
+        val fRmssd: Float,
+        val fPnn10: Float,
+        val fPnn20: Float,
+        val fPnn30: Float,
+        val fPnn40: Float,
+        val fPnn50: Float,
+        val poincare: HrvFeatureExtractor.PoincareMetrics,
+        val fft: HrvFeatureExtractor.FftMetrics,
+        val dfa: HrvFeatureExtractor.DfaMetrics,
+        val tri: HrvFeatureExtractor.TriangularMetrics,
+        val fCd: Float,
+        val fSampen: Float,
+        val fApen: Float,
+        val shann: HrvFeatureExtractor.ShannMetrics,
+        val fM1: Float,
+        val fM2: Float,
+        val fM3: Float,
+        val fAutoc: Float
+    )
+
     private val openCsvLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
             if (uri != null) {
@@ -60,172 +86,220 @@ class MainActivity : AppCompatActivity() {
         )
 
         setLoadingState(true)
-        binding.root.post {
-            try {
-                val rawSamples = CsvParser.parseHrvSamples(contentResolver, uri)
-                if (rawSamples.size < 2) {
-                    Toast.makeText(this, "HRV 데이터가 충분하지 않습니다. (최소 2개)", Toast.LENGTH_SHORT).show()
-                    return@post
+
+        Thread {
+            runCatching { processCsv(uri) }
+                .onSuccess { metrics ->
+                    runOnUiThread {
+                        try {
+                            if (metrics == null) {
+                                Toast.makeText(this, "HRV 데이터가 충분하지 않습니다. (최소 2개)", Toast.LENGTH_SHORT).show()
+                                return@runOnUiThread
+                            }
+                            renderMetrics(metrics)
+                        } finally {
+                            setLoadingState(false)
+                        }
+                    }
                 }
-
-                val rawStep = if (rawSamples.size > 1) {
-                    ((rawSamples.last().timeSec - rawSamples.first().timeSec) / (rawSamples.size - 1)).coerceAtLeast(0.0001f)
-                } else {
-                    1f
+                .onFailure { error ->
+                    runOnUiThread {
+                        try {
+                            Toast.makeText(this, "CSV 처리 실패: ${error.message}", Toast.LENGTH_SHORT).show()
+                        } finally {
+                            setLoadingState(false)
+                        }
+                    }
                 }
+        }.start()
+    }
 
-                binding.rawGraphView.setValues(
-                    newValues = rawSamples.map { it.value },
-                    startXSec = rawSamples.first().timeSec,
-                    stepXSec = rawStep
-                )
+    private fun processCsv(uri: Uri): ProcessedMetrics? {
+        val rawSamples = CsvParser.parseHrvSamples(contentResolver, uri)
+        if (rawSamples.size < 2) return null
 
-                val hrvPercentage = HrvSignalProcessor.apply20PercentFilter(rawSamples)
-                val hrvPercentageValues = hrvPercentage.map { it.value }
-                val rrSeconds = toRrSeconds(hrvPercentageValues)
-
-                val fHr = HrvFeatureExtractor.fHrAverage(rrSeconds)
-                val fSdnn = HrvFeatureExtractor.fSdnn(rrSeconds, flag = 1)
-                val fRmssd = HrvFeatureExtractor.fRmssd(rrSeconds, flag = 1)
-                val fPnn10 = HrvFeatureExtractor.fPnn10(rrSeconds, flag = 1)
-                val fPnn20 = HrvFeatureExtractor.fPnn20(rrSeconds, flag = 1)
-                val fPnn30 = HrvFeatureExtractor.fPnn30(rrSeconds, flag = 1)
-                val fPnn40 = HrvFeatureExtractor.fPnn40(rrSeconds, flag = 1)
-                val fPnn50 = HrvFeatureExtractor.fPnn50(rrSeconds, flag = 1)
-                val poincare = HrvFeatureExtractor.fPoincare(hrvPercentageValues)
-                val fft = HrvFeatureExtractor.fFftMetrics(hrvPercentageValues, fs = 500f)
-                val dfa = HrvFeatureExtractor.dfaMetrics(hrvPercentageValues)
-                val tri = HrvFeatureExtractor.fTriangular(hrvPercentageValues)
-                val fCd = HrvFeatureExtractor.fCd(hrvPercentageValues)
-                val fSampen = HrvFeatureExtractor.fSampen(hrvPercentageValues, m = 2, r = 0.2f)
-                val fApen = HrvFeatureExtractor.fApen(hrvPercentageValues)
-                val shann = HrvFeatureExtractor.fShann(hrvPercentageValues)
-                val fM1 = HrvFeatureExtractor.fM1(hrvPercentageValues)
-                val fM2 = HrvFeatureExtractor.fM2(hrvPercentageValues)
-                val fM3 = HrvFeatureExtractor.fM3(hrvPercentageValues)
-                val fAutoc = HrvFeatureExtractor.fAutoc(hrvPercentageValues)
-
-                binding.textFhrValue.text = if (fHr.isNaN()) "f_HR: 계산 불가" else String.format("f_HR: %.2f bpm", fHr)
-                binding.textFsdnnValue.text = if (fSdnn.isNaN()) "f_SDNN: 계산 불가" else String.format("f_SDNN: %.4f s", fSdnn)
-                binding.textFrmssdValue.text = if (fRmssd.isNaN()) "f_RMSSD: 계산 불가" else String.format("f_RMSSD: %.4f s", fRmssd)
-
-                binding.textFpnnValues.text = if (
-                    fPnn10.isNaN() && fPnn20.isNaN() && fPnn30.isNaN() && fPnn40.isNaN() && fPnn50.isNaN()
-                ) {
-                    "f_pNN10: 계산 불가\n" +
-                        "f_pNN20: 계산 불가\n" +
-                        "f_pNN30: 계산 불가\n" +
-                        "f_pNN40: 계산 불가\n" +
-                        "f_pNN50: 계산 불가"
-                } else {
-                    String.format(
-                        "f_pNN10: %.4f\nf_pNN20: %.4f\nf_pNN30: %.4f\nf_pNN40: %.4f\nf_pNN50: %.4f",
-                        fPnn10, fPnn20, fPnn30, fPnn40, fPnn50
-                    )
-                }
-
-                binding.textPoincareValues.text = if (
-                    poincare.sd1.isNaN() && poincare.sd2.isNaN() && poincare.sd1Sd2Ratio.isNaN()
-                ) {
-                    "f_SD1: 계산 불가\nf_SD2: 계산 불가\nf_SD1SD2: 계산 불가"
-                } else {
-                    String.format(
-                        "f_SD1: %.4f\nf_SD2: %.4f\nf_SD1SD2: %.4f",
-                        poincare.sd1,
-                        poincare.sd2,
-                        poincare.sd1Sd2Ratio
-                    )
-                }
-
-                binding.textFftValues.text = if (
-                    fft.pLf.isNaN() && fft.pHf.isNaN() && fft.lfHfRatio.isNaN() &&
-                    fft.vLf.isNaN() && fft.lf.isNaN() && fft.hf.isNaN()
-                ) {
-                    "f_pLF: 계산 불가\nf_pHF: 계산 불가\nf_LFHF: 계산 불가\nf_VLF: 계산 불가\nf_LF: 계산 불가\nf_HF: 계산 불가"
-                } else {
-                    String.format(
-                        "f_pLF: %.4f\nf_pHF: %.4f\nf_LFHF: %.4f\nf_VLF: %.4f\nf_LF: %.4f\nf_HF: %.4f",
-                        fft.pLf,
-                        fft.pHf,
-                        fft.lfHfRatio,
-                        fft.vLf,
-                        fft.lf,
-                        fft.hf
-                    )
-                }
-
-                binding.textFalphaValue.text = if (dfa.alpha1.isNaN() && dfa.alpha2.isNaN()) {
-                    "f_alpha_1: 계산 불가\nf_alpha_2: 계산 불가"
-                } else {
-                    String.format("f_alpha_1: %.4f\nf_alpha_2: %.4f", dfa.alpha1, dfa.alpha2)
-                }
-
-                binding.textFtriTinnValue.text = if (tri.tri.isNaN() && tri.tinn.isNaN()) {
-                    "f_TRI: 계산 불가\nf_TINN: 계산 불가"
-                } else {
-                    String.format("f_TRI: %.4f\nf_TINN: %.4f s", tri.tri, tri.tinn)
-                }
-
-                binding.textFcdValue.text = if (fCd.isNaN()) "f_cd: 계산 불가" else String.format("f_cd: %.4f", fCd)
-                binding.textFsampenValue.text = if (fSampen.isNaN()) "f_sampen: 계산 불가" else String.format("f_sampen: %.4f", fSampen)
-                binding.textFapenValue.text = if (fApen.isNaN()) "f_apen: 계산 불가" else String.format("f_apen: %.4f", fApen)
-
-                binding.textFshannValues.text = if (shann.shann1.isNaN() && shann.shann2.isNaN()) {
-                    "f_shann1: 계산 불가\nf_shann2: 계산 불가"
-                } else {
-                    String.format("f_shann1: %.4f\nf_shann2: %.4f", shann.shann1, shann.shann2)
-                }
-
-                binding.textFmValues.text = if (fM1.isNaN() && fM2.isNaN() && fM3.isNaN()) {
-                    "f_m1: 계산 불가\nf_m2: 계산 불가\nf_m3: 계산 불가"
-                } else {
-                    String.format("f_m1: %.4f\nf_m2: %.4f\nf_m3: %.4f", fM1, fM2, fM3)
-                }
-
-                binding.textFautocValue.text = if (fAutoc.isNaN()) {
-                    "f_autoc: 계산 불가"
-                } else {
-                    String.format("f_autoc: %.4f", fAutoc)
-                }
-
-                latestFeatureCsv = buildFeatureCsv(
-                    insum = binding.editInsum.text?.toString().orEmpty(),
-                    age = binding.editAge.text?.toString().orEmpty(),
-                    genderCode = getGenderCode(),
-                    fHr = fHr,
-                    fSdnn = fSdnn,
-                    fRmssd = fRmssd,
-                    fPnn10 = fPnn10,
-                    fPnn20 = fPnn20,
-                    fPnn30 = fPnn30,
-                    fPnn40 = fPnn40,
-                    fPnn50 = fPnn50,
-                    fSd1 = poincare.sd1,
-                    fSd2 = poincare.sd2,
-                    fSd1Sd2 = poincare.sd1Sd2Ratio,
-                    fPLf = fft.pLf,
-                    fPHf = fft.pHf,
-                    fLfHf = fft.lfHfRatio,
-                    fVLf = fft.vLf,
-                    fLf = fft.lf,
-                    fHf = fft.hf,
-                    fAlpha1 = dfa.alpha1,
-                    fAlpha2 = dfa.alpha2,
-                    fCd = fCd,
-                    fTri = tri.tri,
-                    fTinn = tri.tinn,
-                    fApen = fApen,
-                    fSampen = fSampen,
-                    fShann1 = shann.shann1,
-                    fShann2 = shann.shann2,
-                    fM1 = fM1,
-                    fM3 = fM3,
-                    fAutoc = fAutoc
-                )
-            } finally {
-                setLoadingState(false)
-            }
+        val rawStep = if (rawSamples.size > 1) {
+            ((rawSamples.last().timeSec - rawSamples.first().timeSec) / (rawSamples.size - 1)).coerceAtLeast(0.0001f)
+        } else {
+            1f
         }
+
+        val hrvPercentage = HrvSignalProcessor.apply20PercentFilter(rawSamples)
+        val hrvPercentageValues = hrvPercentage.map { it.value }
+        val rrSeconds = toRrSeconds(hrvPercentageValues)
+
+        val fHr = HrvFeatureExtractor.fHrAverage(rrSeconds)
+        val fSdnn = HrvFeatureExtractor.fSdnn(rrSeconds, flag = 1)
+        val fRmssd = HrvFeatureExtractor.fRmssd(rrSeconds, flag = 1)
+        val fPnn10 = HrvFeatureExtractor.fPnn10(rrSeconds, flag = 1)
+        val fPnn20 = HrvFeatureExtractor.fPnn20(rrSeconds, flag = 1)
+        val fPnn30 = HrvFeatureExtractor.fPnn30(rrSeconds, flag = 1)
+        val fPnn40 = HrvFeatureExtractor.fPnn40(rrSeconds, flag = 1)
+        val fPnn50 = HrvFeatureExtractor.fPnn50(rrSeconds, flag = 1)
+        val poincare = HrvFeatureExtractor.fPoincare(hrvPercentageValues)
+        val fft = HrvFeatureExtractor.fFftMetrics(hrvPercentageValues, fs = 500f)
+        val dfa = HrvFeatureExtractor.dfaMetrics(hrvPercentageValues)
+        val tri = HrvFeatureExtractor.fTriangular(hrvPercentageValues)
+        val fCd = HrvFeatureExtractor.fCd(hrvPercentageValues)
+        val fSampen = HrvFeatureExtractor.fSampen(hrvPercentageValues, m = 2, r = 0.2f)
+        val fApen = HrvFeatureExtractor.fApen(hrvPercentageValues)
+        val shann = HrvFeatureExtractor.fShann(hrvPercentageValues)
+        val fM1 = HrvFeatureExtractor.fM1(hrvPercentageValues)
+        val fM2 = HrvFeatureExtractor.fM2(hrvPercentageValues)
+        val fM3 = HrvFeatureExtractor.fM3(hrvPercentageValues)
+        val fAutoc = HrvFeatureExtractor.fAutoc(hrvPercentageValues)
+
+        return ProcessedMetrics(
+            rawValues = rawSamples.map { it.value },
+            startXSec = rawSamples.first().timeSec,
+            stepXSec = rawStep,
+            fHr = fHr,
+            fSdnn = fSdnn,
+            fRmssd = fRmssd,
+            fPnn10 = fPnn10,
+            fPnn20 = fPnn20,
+            fPnn30 = fPnn30,
+            fPnn40 = fPnn40,
+            fPnn50 = fPnn50,
+            poincare = poincare,
+            fft = fft,
+            dfa = dfa,
+            tri = tri,
+            fCd = fCd,
+            fSampen = fSampen,
+            fApen = fApen,
+            shann = shann,
+            fM1 = fM1,
+            fM2 = fM2,
+            fM3 = fM3,
+            fAutoc = fAutoc
+        )
+    }
+
+    private fun renderMetrics(metrics: ProcessedMetrics) {
+        binding.rawGraphView.setValues(
+            newValues = metrics.rawValues,
+            startXSec = metrics.startXSec,
+            stepXSec = metrics.stepXSec
+        )
+
+        binding.textFhrValue.text = if (metrics.fHr.isNaN()) "f_HR: 계산 불가" else String.format("f_HR: %.2f bpm", metrics.fHr)
+        binding.textFsdnnValue.text = if (metrics.fSdnn.isNaN()) "f_SDNN: 계산 불가" else String.format("f_SDNN: %.4f s", metrics.fSdnn)
+        binding.textFrmssdValue.text = if (metrics.fRmssd.isNaN()) "f_RMSSD: 계산 불가" else String.format("f_RMSSD: %.4f s", metrics.fRmssd)
+
+        binding.textFpnnValues.text = if (
+            metrics.fPnn10.isNaN() && metrics.fPnn20.isNaN() && metrics.fPnn30.isNaN() && metrics.fPnn40.isNaN() && metrics.fPnn50.isNaN()
+        ) {
+            "f_pNN10: 계산 불가\n" +
+                "f_pNN20: 계산 불가\n" +
+                "f_pNN30: 계산 불가\n" +
+                "f_pNN40: 계산 불가\n" +
+                "f_pNN50: 계산 불가"
+        } else {
+            String.format(
+                "f_pNN10: %.4f\nf_pNN20: %.4f\nf_pNN30: %.4f\nf_pNN40: %.4f\nf_pNN50: %.4f",
+                metrics.fPnn10, metrics.fPnn20, metrics.fPnn30, metrics.fPnn40, metrics.fPnn50
+            )
+        }
+
+        binding.textPoincareValues.text = if (
+            metrics.poincare.sd1.isNaN() && metrics.poincare.sd2.isNaN() && metrics.poincare.sd1Sd2Ratio.isNaN()
+        ) {
+            "f_SD1: 계산 불가\nf_SD2: 계산 불가\nf_SD1SD2: 계산 불가"
+        } else {
+            String.format(
+                "f_SD1: %.4f\nf_SD2: %.4f\nf_SD1SD2: %.4f",
+                metrics.poincare.sd1,
+                metrics.poincare.sd2,
+                metrics.poincare.sd1Sd2Ratio
+            )
+        }
+
+        binding.textFftValues.text = if (
+            metrics.fft.pLf.isNaN() && metrics.fft.pHf.isNaN() && metrics.fft.lfHfRatio.isNaN() &&
+            metrics.fft.vLf.isNaN() && metrics.fft.lf.isNaN() && metrics.fft.hf.isNaN()
+        ) {
+            "f_pLF: 계산 불가\nf_pHF: 계산 불가\nf_LFHF: 계산 불가\nf_VLF: 계산 불가\nf_LF: 계산 불가\nf_HF: 계산 불가"
+        } else {
+            String.format(
+                "f_pLF: %.4f\nf_pHF: %.4f\nf_LFHF: %.4f\nf_VLF: %.4f\nf_LF: %.4f\nf_HF: %.4f",
+                metrics.fft.pLf,
+                metrics.fft.pHf,
+                metrics.fft.lfHfRatio,
+                metrics.fft.vLf,
+                metrics.fft.lf,
+                metrics.fft.hf
+            )
+        }
+
+        binding.textFalphaValue.text = if (metrics.dfa.alpha1.isNaN() && metrics.dfa.alpha2.isNaN()) {
+            "f_alpha_1: 계산 불가\nf_alpha_2: 계산 불가"
+        } else {
+            String.format("f_alpha_1: %.4f\nf_alpha_2: %.4f", metrics.dfa.alpha1, metrics.dfa.alpha2)
+        }
+
+        binding.textFtriTinnValue.text = if (metrics.tri.tri.isNaN() && metrics.tri.tinn.isNaN()) {
+            "f_TRI: 계산 불가\nf_TINN: 계산 불가"
+        } else {
+            String.format("f_TRI: %.4f\nf_TINN: %.4f s", metrics.tri.tri, metrics.tri.tinn)
+        }
+
+        binding.textFcdValue.text = if (metrics.fCd.isNaN()) "f_cd: 계산 불가" else String.format("f_cd: %.4f", metrics.fCd)
+        binding.textFsampenValue.text = if (metrics.fSampen.isNaN()) "f_sampen: 계산 불가" else String.format("f_sampen: %.4f", metrics.fSampen)
+        binding.textFapenValue.text = if (metrics.fApen.isNaN()) "f_apen: 계산 불가" else String.format("f_apen: %.4f", metrics.fApen)
+
+        binding.textFshannValues.text = if (metrics.shann.shann1.isNaN() && metrics.shann.shann2.isNaN()) {
+            "f_shann1: 계산 불가\nf_shann2: 계산 불가"
+        } else {
+            String.format("f_shann1: %.4f\nf_shann2: %.4f", metrics.shann.shann1, metrics.shann.shann2)
+        }
+
+        binding.textFmValues.text = if (metrics.fM1.isNaN() && metrics.fM2.isNaN() && metrics.fM3.isNaN()) {
+            "f_m1: 계산 불가\nf_m2: 계산 불가\nf_m3: 계산 불가"
+        } else {
+            String.format("f_m1: %.4f\nf_m2: %.4f\nf_m3: %.4f", metrics.fM1, metrics.fM2, metrics.fM3)
+        }
+
+        binding.textFautocValue.text = if (metrics.fAutoc.isNaN()) {
+            "f_autoc: 계산 불가"
+        } else {
+            String.format("f_autoc: %.4f", metrics.fAutoc)
+        }
+
+        latestFeatureCsv = buildFeatureCsv(
+            insum = binding.editInsum.text?.toString().orEmpty(),
+            age = binding.editAge.text?.toString().orEmpty(),
+            genderCode = getGenderCode(),
+            fHr = metrics.fHr,
+            fSdnn = metrics.fSdnn,
+            fRmssd = metrics.fRmssd,
+            fPnn10 = metrics.fPnn10,
+            fPnn20 = metrics.fPnn20,
+            fPnn30 = metrics.fPnn30,
+            fPnn40 = metrics.fPnn40,
+            fPnn50 = metrics.fPnn50,
+            fSd1 = metrics.poincare.sd1,
+            fSd2 = metrics.poincare.sd2,
+            fSd1Sd2 = metrics.poincare.sd1Sd2Ratio,
+            fPLf = metrics.fft.pLf,
+            fPHf = metrics.fft.pHf,
+            fLfHf = metrics.fft.lfHfRatio,
+            fVLf = metrics.fft.vLf,
+            fLf = metrics.fft.lf,
+            fHf = metrics.fft.hf,
+            fAlpha1 = metrics.dfa.alpha1,
+            fAlpha2 = metrics.dfa.alpha2,
+            fCd = metrics.fCd,
+            fTri = metrics.tri.tri,
+            fTinn = metrics.tri.tinn,
+            fApen = metrics.fApen,
+            fSampen = metrics.fSampen,
+            fShann1 = metrics.shann.shann1,
+            fShann2 = metrics.shann.shann2,
+            fM1 = metrics.fM1,
+            fM3 = metrics.fM3,
+            fAutoc = metrics.fAutoc
+        )
     }
 
     private fun toRrSeconds(values: List<Float>): List<Float> {
