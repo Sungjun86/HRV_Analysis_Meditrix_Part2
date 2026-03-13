@@ -12,7 +12,7 @@ import com.example.csvgraph.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private var latestHrvInterpolation: List<HrvSample> = emptyList()
+    private var latestFeatureCsv: String? = null
 
     private val openCsvLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -21,10 +21,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-    private val createInterpolatedCsvLauncher =
+    private val createFeatureCsvLauncher =
         registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri: Uri? ->
             if (uri != null) {
-                saveInterpolatedCsv(uri)
+                saveFeatureCsv(uri)
             }
         }
 
@@ -38,11 +38,11 @@ class MainActivity : AppCompatActivity() {
             openCsvLauncher.launch(arrayOf("text/*", "application/csv"))
         }
 
-        binding.buttonSaveInterpolatedCsv.setOnClickListener {
-            if (latestHrvInterpolation.isEmpty()) {
-                Toast.makeText(this, "먼저 CSV를 불러와 처리 데이터를 생성하세요.", Toast.LENGTH_SHORT).show()
+        binding.buttonSaveFeatureCsv.setOnClickListener {
+            if (latestFeatureCsv == null) {
+                Toast.makeText(this, "먼저 CSV를 불러와 Feature를 계산하세요.", Toast.LENGTH_SHORT).show()
             } else {
-                createInterpolatedCsvLauncher.launch("hrv_interpolation_4hz.csv")
+                createFeatureCsvLauncher.launch("hrv_features.csv")
             }
         }
     }
@@ -50,7 +50,7 @@ class MainActivity : AppCompatActivity() {
     private fun setLoadingState(isLoading: Boolean) {
         binding.progressProcessing.visibility = if (isLoading) View.VISIBLE else View.GONE
         binding.buttonLoadCsv.isEnabled = !isLoading
-        binding.buttonSaveInterpolatedCsv.isEnabled = !isLoading
+        binding.buttonSaveFeatureCsv.isEnabled = !isLoading
     }
 
     private fun renderCsv(uri: Uri) {
@@ -80,50 +80,34 @@ class MainActivity : AppCompatActivity() {
                     stepXSec = rawStep
                 )
 
-                // 3) 20% filter on raw HRV -> HRV_Percentage
                 val hrvPercentage = HrvSignalProcessor.apply20PercentFilter(rawSamples)
-
-                // f_HR / f_SDNN input: HRV_Percentage
-                val rrSeconds = toRrSeconds(hrvPercentage.map { it.value })
+                val hrvPercentageValues = hrvPercentage.map { it.value }
+                val rrSeconds = toRrSeconds(hrvPercentageValues)
 
                 val fHr = HrvFeatureExtractor.fHrAverage(rrSeconds)
-                binding.textFhrValue.text = if (fHr.isNaN()) {
-                    "f_HR: 계산 불가"
-                } else {
-                    String.format("f_HR: %.2f bpm", fHr)
-                }
-
                 val fSdnn = HrvFeatureExtractor.fSdnn(rrSeconds, flag = 1)
-                binding.textFsdnnValue.text = if (fSdnn.isNaN()) {
-                    "f_SDNN: 계산 불가"
-                } else {
-                    String.format("f_SDNN: %.4f s", fSdnn)
-                }
-
                 val fRmssd = HrvFeatureExtractor.fRmssd(rrSeconds, flag = 1)
-                binding.textFrmssdValue.text = if (fRmssd.isNaN()) {
-                    "f_RMSSD: 계산 불가"
-                } else {
-                    String.format("f_RMSSD: %.4f s", fRmssd)
-                }
-
                 val fPnn10 = HrvFeatureExtractor.fPnn10(rrSeconds, flag = 1)
                 val fPnn20 = HrvFeatureExtractor.fPnn20(rrSeconds, flag = 1)
                 val fPnn30 = HrvFeatureExtractor.fPnn30(rrSeconds, flag = 1)
                 val fPnn40 = HrvFeatureExtractor.fPnn40(rrSeconds, flag = 1)
                 val fPnn50 = HrvFeatureExtractor.fPnn50(rrSeconds, flag = 1)
-                val poincare = HrvFeatureExtractor.fPoincare(hrvPercentage.map { it.value })
-                val fft = HrvFeatureExtractor.fFftMetrics(hrvPercentage.map { it.value }, fs = 500f)
-                val dfa = HrvFeatureExtractor.dfaMetrics(hrvPercentage.map { it.value })
-                val tri = HrvFeatureExtractor.fTriangular(hrvPercentage.map { it.value })
-                val fCd = HrvFeatureExtractor.fCd(hrvPercentage.map { it.value })
-                val fSampen = HrvFeatureExtractor.fSampen(hrvPercentage.map { it.value }, m = 2, r = 0.2f)
-                val fApen = HrvFeatureExtractor.fApen(hrvPercentage.map { it.value })
-                val shann = HrvFeatureExtractor.fShann(hrvPercentage.map { it.value })
-                val fM1 = HrvFeatureExtractor.fM1(hrvPercentage.map { it.value })
-                val fM2 = HrvFeatureExtractor.fM2(hrvPercentage.map { it.value })
-                val fM3 = HrvFeatureExtractor.fM3(hrvPercentage.map { it.value })
-                val fAutoc = HrvFeatureExtractor.fAutoc(hrvPercentage.map { it.value })
+                val poincare = HrvFeatureExtractor.fPoincare(hrvPercentageValues)
+                val fft = HrvFeatureExtractor.fFftMetrics(hrvPercentageValues, fs = 500f)
+                val dfa = HrvFeatureExtractor.dfaMetrics(hrvPercentageValues)
+                val tri = HrvFeatureExtractor.fTriangular(hrvPercentageValues)
+                val fCd = HrvFeatureExtractor.fCd(hrvPercentageValues)
+                val fSampen = HrvFeatureExtractor.fSampen(hrvPercentageValues, m = 2, r = 0.2f)
+                val fApen = HrvFeatureExtractor.fApen(hrvPercentageValues)
+                val shann = HrvFeatureExtractor.fShann(hrvPercentageValues)
+                val fM1 = HrvFeatureExtractor.fM1(hrvPercentageValues)
+                val fM2 = HrvFeatureExtractor.fM2(hrvPercentageValues)
+                val fM3 = HrvFeatureExtractor.fM3(hrvPercentageValues)
+                val fAutoc = HrvFeatureExtractor.fAutoc(hrvPercentageValues)
+
+                binding.textFhrValue.text = if (fHr.isNaN()) "f_HR: 계산 불가" else String.format("f_HR: %.2f bpm", fHr)
+                binding.textFsdnnValue.text = if (fSdnn.isNaN()) "f_SDNN: 계산 불가" else String.format("f_SDNN: %.4f s", fSdnn)
+                binding.textFrmssdValue.text = if (fRmssd.isNaN()) "f_RMSSD: 계산 불가" else String.format("f_RMSSD: %.4f s", fRmssd)
 
                 binding.textFpnnValues.text = if (
                     fPnn10.isNaN() && fPnn20.isNaN() && fPnn30.isNaN() && fPnn40.isNaN() && fPnn50.isNaN()
@@ -182,23 +166,9 @@ class MainActivity : AppCompatActivity() {
                     String.format("f_TRI: %.4f\nf_TINN: %.4f s", tri.tri, tri.tinn)
                 }
 
-                binding.textFcdValue.text = if (fCd.isNaN()) {
-                    "f_cd: 계산 불가"
-                } else {
-                    String.format("f_cd: %.4f", fCd)
-                }
-
-                binding.textFsampenValue.text = if (fSampen.isNaN()) {
-                    "f_sampen: 계산 불가"
-                } else {
-                    String.format("f_sampen: %.4f", fSampen)
-                }
-
-                binding.textFapenValue.text = if (fApen.isNaN()) {
-                    "f_apen: 계산 불가"
-                } else {
-                    String.format("f_apen: %.4f", fApen)
-                }
+                binding.textFcdValue.text = if (fCd.isNaN()) "f_cd: 계산 불가" else String.format("f_cd: %.4f", fCd)
+                binding.textFsampenValue.text = if (fSampen.isNaN()) "f_sampen: 계산 불가" else String.format("f_sampen: %.4f", fSampen)
+                binding.textFapenValue.text = if (fApen.isNaN()) "f_apen: 계산 불가" else String.format("f_apen: %.4f", fApen)
 
                 binding.textFshannValues.text = if (shann.shann1.isNaN() && shann.shann2.isNaN()) {
                     "f_shann1: 계산 불가\nf_shann2: 계산 불가"
@@ -218,19 +188,40 @@ class MainActivity : AppCompatActivity() {
                     String.format("f_autoc: %.4f", fAutoc)
                 }
 
-                // 4) interpolate HRV_Percentage by 4Hz cubic spline
-                val interpolated = HrvInterpolator.interpolateTo4HzCubicSpline(hrvPercentage)
-                if (interpolated.isEmpty()) {
-                    Toast.makeText(this, "4Hz 보간 결과가 비어 있습니다.", Toast.LENGTH_SHORT).show()
-                    return@post
-                }
-
-                // 5) detrend on interpolated signal -> HRV_Interpolation
-                val hrvInterpolation = HrvSignalProcessor.detrendLinear(interpolated)
-                latestHrvInterpolation = hrvInterpolation
-
-                // 4Hz Interpolation 그래프는 UI에서 제거되었으므로
-                // 보간/디트렌드 결과는 CSV 저장용 데이터만 유지
+                latestFeatureCsv = buildFeatureCsv(
+                    insum = binding.editInsum.text?.toString().orEmpty(),
+                    age = binding.editAge.text?.toString().orEmpty(),
+                    genderCode = getGenderCode(),
+                    fHr = fHr,
+                    fSdnn = fSdnn,
+                    fRmssd = fRmssd,
+                    fPnn10 = fPnn10,
+                    fPnn20 = fPnn20,
+                    fPnn30 = fPnn30,
+                    fPnn40 = fPnn40,
+                    fPnn50 = fPnn50,
+                    fSd1 = poincare.sd1,
+                    fSd2 = poincare.sd2,
+                    fSd1Sd2 = poincare.sd1Sd2Ratio,
+                    fPLf = fft.pLf,
+                    fPHf = fft.pHf,
+                    fLfHf = fft.lfHfRatio,
+                    fVLf = fft.vLf,
+                    fLf = fft.lf,
+                    fHf = fft.hf,
+                    fAlpha1 = dfa.alpha1,
+                    fAlpha2 = dfa.alpha2,
+                    fCd = fCd,
+                    fTri = tri.tri,
+                    fTinn = tri.tinn,
+                    fApen = fApen,
+                    fSampen = fSampen,
+                    fShann1 = shann.shann1,
+                    fShann2 = shann.shann2,
+                    fM1 = fM1,
+                    fM3 = fM3,
+                    fAutoc = fAutoc
+                )
             } finally {
                 setLoadingState(false)
             }
@@ -244,16 +235,102 @@ class MainActivity : AppCompatActivity() {
         return if (assumeMs) values.map { it / 1000f } else values
     }
 
-    private fun saveInterpolatedCsv(uri: Uri) {
-        if (latestHrvInterpolation.isEmpty()) return
+    private fun getGenderCode(): String {
+        return if (binding.radioFemale.isChecked) "2" else "0"
+    }
+
+    private fun formatCsvValue(value: Float): String {
+        return if (value.isNaN() || value.isInfinite()) "" else String.format("%.6f", value)
+    }
+
+    private fun buildFeatureCsv(
+        insum: String,
+        age: String,
+        genderCode: String,
+        fHr: Float,
+        fSdnn: Float,
+        fRmssd: Float,
+        fPnn10: Float,
+        fPnn20: Float,
+        fPnn30: Float,
+        fPnn40: Float,
+        fPnn50: Float,
+        fSd1: Float,
+        fSd2: Float,
+        fSd1Sd2: Float,
+        fPLf: Float,
+        fPHf: Float,
+        fLfHf: Float,
+        fVLf: Float,
+        fLf: Float,
+        fHf: Float,
+        fAlpha1: Float,
+        fAlpha2: Float,
+        fCd: Float,
+        fTri: Float,
+        fTinn: Float,
+        fApen: Float,
+        fSampen: Float,
+        fShann1: Float,
+        fShann2: Float,
+        fM1: Float,
+        fM3: Float,
+        fAutoc: Float
+    ): String {
+        val header = listOf(
+            "INSUM", "f_HR", "f_SDNN", "f_RMSSD", "f_pNN10", "f_pNN20", "f_pNN30", "f_pNN40", "f_pNN50",
+            "f_SD1", "f_SD2", "f_SD1SD2", "f_pLF", "f_pHF", "f_LFHF", "f_VLF", "f_LF", "f_HF",
+            "f_alpha1", "f_alpha2", "f_cd", "f_TRI", "f_TINN", "f_apen", "f_sampen", "f_shann1", "f_shann2",
+            "AGE", "GENDER", "f_m1", "f_m3", "f_autoc"
+        ).joinToString(",")
+
+        val row = listOf(
+            insum,
+            formatCsvValue(fHr),
+            formatCsvValue(fSdnn),
+            formatCsvValue(fRmssd),
+            formatCsvValue(fPnn10),
+            formatCsvValue(fPnn20),
+            formatCsvValue(fPnn30),
+            formatCsvValue(fPnn40),
+            formatCsvValue(fPnn50),
+            formatCsvValue(fSd1),
+            formatCsvValue(fSd2),
+            formatCsvValue(fSd1Sd2),
+            formatCsvValue(fPLf),
+            formatCsvValue(fPHf),
+            formatCsvValue(fLfHf),
+            formatCsvValue(fVLf),
+            formatCsvValue(fLf),
+            formatCsvValue(fHf),
+            formatCsvValue(fAlpha1),
+            formatCsvValue(fAlpha2),
+            formatCsvValue(fCd),
+            formatCsvValue(fTri),
+            formatCsvValue(fTinn),
+            formatCsvValue(fApen),
+            formatCsvValue(fSampen),
+            formatCsvValue(fShann1),
+            formatCsvValue(fShann2),
+            age,
+            genderCode,
+            formatCsvValue(fM1),
+            formatCsvValue(fM3),
+            formatCsvValue(fAutoc)
+        ).joinToString(",")
+
+        return "$header\n$row\n"
+    }
+
+    private fun saveFeatureCsv(uri: Uri) {
+        val csvText = latestFeatureCsv ?: return
 
         runCatching {
-            val csvText = HrvInterpolator.toCsv(latestHrvInterpolation)
             contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
                 writer.write(csvText)
             }
         }.onSuccess {
-            Toast.makeText(this, "HRV_Interpolation CSV 저장 완료", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "HRV Feature CSV 저장 완료", Toast.LENGTH_SHORT).show()
         }.onFailure {
             Toast.makeText(this, "CSV 저장 실패: ${it.message}", Toast.LENGTH_SHORT).show()
         }
