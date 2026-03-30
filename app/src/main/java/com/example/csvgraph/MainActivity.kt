@@ -10,11 +10,16 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.example.csvgraph.databinding.ActivityMainBinding
+import kotlin.math.ceil
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var latestProcessedMetrics: ProcessedMetrics? = null
+
+    companion object {
+        private const val MAX_PROCESSING_SAMPLES = 20000
+    }
 
     private data class ProcessedMetrics(
         val rawValues: List<Float>,
@@ -39,7 +44,9 @@ class MainActivity : AppCompatActivity() {
         val fM1: Float,
         val fM2: Float,
         val fM3: Float,
-        val fAutoc: Float
+        val fAutoc: Float,
+        val originalSampleCount: Int,
+        val usedSampleCount: Int
     )
 
     private val openCsvLauncher =
@@ -142,6 +149,9 @@ class MainActivity : AppCompatActivity() {
                             }
                             latestProcessedMetrics = metrics
                             renderMetrics(metrics)
+                            if (metrics.originalSampleCount > metrics.usedSampleCount) {
+                                Toast.makeText(this, "대용량 CSV로 인해 ${metrics.originalSampleCount}개 중 ${metrics.usedSampleCount}개 샘플로 처리했습니다.", Toast.LENGTH_LONG).show()
+                            }
                         } finally {
                             setLoadingState(false)
                         }
@@ -160,9 +170,23 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    private fun downsampleSamples(samples: List<HrvSample>, maxSamples: Int): List<HrvSample> {
+        if (samples.size <= maxSamples) return samples
+        val stride = ceil(samples.size / maxSamples.toDouble()).toInt().coerceAtLeast(1)
+        val downsampled = ArrayList<HrvSample>(maxSamples)
+        var i = 0
+        while (i < samples.size) {
+            downsampled.add(samples[i])
+            i += stride
+        }
+        return downsampled
+    }
+
     private fun processCsv(uri: Uri): ProcessedMetrics? {
-        val rawSamples = CsvParser.parseHrvSamples(contentResolver, uri)
-        if (rawSamples.size < 2) return null
+        val parsedSamples = CsvParser.parseHrvSamples(contentResolver, uri)
+        if (parsedSamples.size < 2) return null
+
+        val rawSamples = downsampleSamples(parsedSamples, MAX_PROCESSING_SAMPLES)
 
         val rawStep = if (rawSamples.size > 1) {
             ((rawSamples.last().timeSec - rawSamples.first().timeSec) / (rawSamples.size - 1)).coerceAtLeast(0.0001f)
@@ -218,7 +242,9 @@ class MainActivity : AppCompatActivity() {
             fM1 = fM1,
             fM2 = fM2,
             fM3 = fM3,
-            fAutoc = fAutoc
+            fAutoc = fAutoc,
+            originalSampleCount = parsedSamples.size,
+            usedSampleCount = rawSamples.size
         )
     }
 
@@ -317,8 +343,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun toRrSeconds(values: List<Float>): List<Float> {
         if (values.isEmpty()) return emptyList()
-        val median = values.sorted()[values.size / 2]
-        val assumeMs = median > 10f
+        val probeSize = minOf(values.size, 1024)
+        val probe = values.subList(0, probeSize)
+        val mean = probe.sum() / probeSize.toFloat()
+        val assumeMs = mean > 10f
         return if (assumeMs) values.map { it / 1000f } else values
     }
 
