@@ -33,27 +33,22 @@ object CsvParser {
             lines.forEach { line ->
                 if (line.isBlank()) return@forEach
 
-                val numericTokens = line
-                    .split(',', ';', '\t')
-                    .map { it.trim() }
-                    .mapNotNull { it.toFloatOrNull() }
-
-                when {
-                    numericTokens.size >= 2 -> {
-                        val t = numericTokens[0]
-                        val v = numericTokens[1]
+                val parsed = parseUpToTwoNumbers(line)
+                when (parsed.size) {
+                    2 -> {
+                        val t = parsed[0]
+                        val v = parsed[1]
                         if (rowIndex % stride == 0) {
                             appendIfNewTime(samples, HrvSample(timeSec = t, value = v))
                         }
                         rowIndex++
                     }
 
-                    numericTokens.size == 1 -> {
-                        val rrMs = numericTokens[0]
+                    1 -> {
+                        val rrMs = parsed[0]
                         val time = cumulativeSec
-                        val value = rrMs
                         if (rowIndex % stride == 0) {
-                            appendIfNewTime(samples, HrvSample(timeSec = time, value = value))
+                            appendIfNewTime(samples, HrvSample(timeSec = time, value = rrMs))
                         }
                         cumulativeSec += (rrMs / 1000f).coerceAtLeast(0f)
                         rowIndex++
@@ -70,15 +65,34 @@ object CsvParser {
         contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
             lines.forEach { line ->
                 if (line.isBlank()) return@forEach
-                val hasNumeric = line
-                    .split(',', ';', '\t')
-                    .asSequence()
-                    .map { it.trim() }
-                    .any { it.toFloatOrNull() != null }
-                if (hasNumeric) count++
+                if (parseUpToTwoNumbers(line).isNotEmpty()) count++
             }
         }
         return count
+    }
+
+    private fun parseUpToTwoNumbers(line: String): List<Float> {
+        val out = ArrayList<Float>(2)
+        val token = StringBuilder()
+
+        fun flushToken() {
+            if (token.isEmpty()) return
+            val value = token.toString().trim().toFloatOrNull()
+            if (value != null) out.add(value)
+            token.setLength(0)
+        }
+
+        for (c in line) {
+            if (c == ',' || c == ';' || c == '\t') {
+                flushToken()
+                if (out.size >= 2) break
+            } else {
+                token.append(c)
+            }
+        }
+
+        if (out.size < 2) flushToken()
+        return out
     }
 
     private fun appendIfNewTime(samples: MutableList<HrvSample>, sample: HrvSample) {
