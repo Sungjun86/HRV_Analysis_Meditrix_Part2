@@ -183,7 +183,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun processCsv(uri: Uri): ProcessedMetrics? {
-        val parsedSamples = CsvParser.parseHrvSamples(contentResolver, uri)
+        val parsedSamples = CsvParser.parseHrvSamples(contentResolver, uri, MAX_PROCESSING_SAMPLES)
         if (parsedSamples.size < 2) return null
 
         val rawSamples = downsampleSamples(parsedSamples, MAX_PROCESSING_SAMPLES)
