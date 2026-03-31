@@ -636,15 +636,21 @@ object HrvFeatureExtractor {
      * MATLAB: [f_pLF, f_pHF, f_LFHF, f_VLF, f_LF, f_HF] = fft_val_fun(HRV_Percentage, 500)
      */
     fun fFftMetrics(rrInput: List<Float>, fs: Float = 500f): FftMetrics {
-        if (rrInput.size < 2 || fs <= 0f || rrInput.any { it.isNaN() }) {
+        val rr = rrInput.filter { !it.isNaN() }
+        if (rr.size < 2 || fs <= 0f) {
             return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
         }
 
-        val ann = mutableListOf<Float>()
+        // 입력이 ms 단위로 보이면 sec로 변환 (대용량 resample 메모리 폭주 방지)
+        val probeSize = minOf(rr.size, 1024)
+        val probeMean = rr.subList(0, probeSize).sum() / probeSize.toFloat()
+        val rrSec = if (probeMean > 10f) rr.map { it / 1000f } else rr
+
+        val ann = ArrayList<Float>(rrSec.size)
         var sum = 0f
-        rrInput.forEachIndexed { idx, v ->
+        rrSec.forEachIndexed { idx, v ->
             sum += v
-            ann += if (idx == 0) 0f else sum - rrInput.first()
+            ann += if (idx == 0) 0f else sum - rrSec.first()
         }
 
         val end = ann.last()
@@ -652,8 +658,14 @@ object HrvFeatureExtractor {
             return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
         }
 
-        val step = 1f / fs
-        val rrResampled = splineResample(ann, rrInput, step)
+        val maxResampledPoints = 16384f
+        val effectiveFs = minOf(fs, maxResampledPoints / end)
+        if (effectiveFs <= 1f) {
+            return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
+        }
+
+        val step = 1f / effectiveFs
+        val rrResampled = splineResample(ann, rrSec, step)
         if (rrResampled.isEmpty()) {
             return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
         }
@@ -685,7 +697,7 @@ object HrvFeatureExtractor {
         fun bandSum(maxHz: Float): Float {
             var acc = 0f
             for (k in power.indices) {
-                val f = fs / 2f * (k.toFloat() / (nfft / 2f))
+                val f = effectiveFs / 2f * (k.toFloat() / (nfft / 2f))
                 if (f <= maxHz) acc += power[k]
             }
             return acc
