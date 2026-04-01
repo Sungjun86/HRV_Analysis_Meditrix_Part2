@@ -367,7 +367,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun formatCsvValue(value: Float): String {
-        return if (value.isNaN() || value.isInfinite()) "" else String.format("%.6f", value)
+        return if (value.isNaN() || value.isInfinite()) "" else String.format("%.3f", value)
     }
 
     private fun buildFeatureCsv(
