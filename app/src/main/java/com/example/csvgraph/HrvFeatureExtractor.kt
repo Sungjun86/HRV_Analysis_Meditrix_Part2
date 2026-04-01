@@ -1,0 +1,1050 @@
+package com.example.csvgraph
+
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.ln
+import kotlin.math.pow
+import kotlin.math.sqrt
+
+object HrvFeatureExtractor {
+
+    data class PoincareMetrics(
+        val sd1: Float,
+        val sd2: Float,
+        val sd1Sd2Ratio: Float
+    )
+
+
+    data class FftMetrics(
+        val pLf: Float,
+        val pHf: Float,
+        val lfHfRatio: Float,
+        val vLf: Float,
+        val lf: Float,
+        val hf: Float
+    )
+
+
+    data class DfaMetrics(
+        val alpha1: Float,
+        val alpha2: Float
+    )
+
+
+    data class TriangularMetrics(
+        val tri: Float,
+        val tinn: Float
+    )
+
+
+    data class CdMetrics(
+        val cd: Float
+    )
+
+    data class ShannMetrics(
+        val shann1: Float,
+        val shann2: Float
+    )
+
+    /**
+     * MATLAB HR(RR,num,segment) 동작을 Kotlin으로 구현.
+     * RR 단위: seconds
+     */
+    fun hr(rrInput: List<Float>, num: Int = 0, segment: Int = 0): List<Float> {
+        val rr = rrInput.toList()
+        if (rr.isEmpty()) return emptyList()
+
+        return if (num == 0) {
+            val valid = rr.filter { !it.isNaN() }
+            val total = valid.sum()
+            val avg = if (total > 0f) 60f * valid.size / total else Float.NaN
+            List(rr.size) { avg }
+        } else {
+            if (segment == 0) {
+                constantIntervalWindow(rr, num)
+            } else {
+                rollingSecondWindow(rr, num)
+            }
+        }
+    }
+
+    /**
+     * MATLAB SDNN(RR,num,flag,overlap) 동작 참조 구현.
+     * flag=1 -> n 으로 정규화, flag=0 -> (n-1) 정규화
+     */
+    fun sdnn(rrInput: List<Float>, num: Int = 0, flag: Int = 1, overlap: Float = 1f): List<Float> {
+        val rr = rrInput.toList()
+        if (rr.isEmpty()) return emptyList()
+
+        return if (num == 0) {
+            val global = nanStd(rr, flag)
+            List(rr.size) { global }
+        } else {
+            val step = ceil(num * (1f - overlap)).toInt()
+            if (step > 1) {
+                val out = MutableList(rr.size) { Float.NaN }
+                var i = step
+                while (i <= rr.size) {
+                    val start = maxOf(0, i - num)
+                    val window = rr.subList(start, i)
+                    val validCount = window.count { !it.isNaN() }
+                    out[i - 1] = if (validCount < 5) Float.NaN else nanStd(window, flag)
+                    i += step
+                }
+                out
+            } else {
+                val out = MutableList(rr.size) { Float.NaN }
+                for (i in rr.indices) {
+                    val start = maxOf(0, i - num + 1)
+                    val window = rr.subList(start, i + 1)
+                    val validCount = window.count { !it.isNaN() }
+                    out[i] = if (validCount < 5) Float.NaN else nanStd(window, flag)
+                }
+                out
+            }
+        }
+    }
+
+    /**
+     * MATLAB RMSSD(RR,num,flag,overlap) 동작 참조 구현.
+     * RR 단위: seconds
+     */
+    fun rmssd(rrInput: List<Float>, num: Int = 0, flag: Int = 1, overlap: Float = 1f): List<Float> {
+        val rr = rrInput.toList()
+        if (rr.size < 2) return List(rr.size) { Float.NaN }
+
+        val drr2 = MutableList(rr.size - 1) { i ->
+            val a = rr[i]
+            val b = rr[i + 1]
+            if (a.isNaN() || b.isNaN()) Float.NaN else (b - a) * (b - a)
+        }
+
+        return if (num == 0) {
+            val valid = drr2.filter { !it.isNaN() }
+            val n = valid.size
+            val denom = n - 1 + flag
+            val g = if (denom > 0) sqrt(valid.sum() / denom) else Float.NaN
+            List(rr.size) { g }
+        } else {
+            val step = ceil(num * (1f - overlap)).toInt()
+            val out = MutableList(rr.size) { Float.NaN }
+
+            if (step > 1) {
+                var i = step
+                while (i <= drr2.size) {
+                    val start = maxOf(0, i - num)
+                    val window = drr2.subList(start, i)
+                    val valid = window.filter { !it.isNaN() }
+                    out[i] = if (valid.size < 5) {
+                        Float.NaN
+                    } else {
+                        val denom = valid.size - 1 + flag
+                        if (denom > 0) sqrt(valid.sum() / denom) else Float.NaN
+                    }
+                    i += step
+                }
+            } else {
+                for (i in rr.indices) {
+                    if (i == 0) {
+                        out[i] = Float.NaN
+                        continue
+                    }
+                    val end = i
+                    val start = maxOf(0, end - num)
+                    val window = drr2.subList(start, end)
+                    val valid = window.filter { !it.isNaN() }
+                    out[i] = if (valid.size < 5) {
+                        Float.NaN
+                    } else {
+                        val denom = valid.size - 1 + flag
+                        if (denom > 0) sqrt(valid.sum() / denom) else Float.NaN
+                    }
+                }
+            }
+            out
+        }
+    }
+
+    /** pNNx: abs(diff(RR)) > x(ms) 비율 */
+    fun pNnx(rrInput: List<Float>, num: Int = 0, xMs: Int, flag: Int = 1, overlap: Float = 1f): List<Float> {
+        val rr = rrInput.toList()
+        if (rr.size < 2) return List(rr.size) { Float.NaN }
+
+        val nnx = MutableList(rr.size - 1) { i ->
+            val a = rr[i]
+            val b = rr[i + 1]
+            if (a.isNaN() || b.isNaN()) Float.NaN else if (kotlin.math.abs(b - a) > xMs / 1000f) 1f else 0f
+        }
+
+        if (num == 0) {
+            val valid = nnx.filter { !it.isNaN() }
+            val n = valid.size
+            val denom = n - 1 + flag
+            val v = if (denom > 0) valid.sum() / denom else Float.NaN
+            return List(rr.size) { v }
+        }
+
+        val out = MutableList(rr.size) { Float.NaN }
+        val step = ceil(num * (1f - overlap)).toInt()
+
+        if (step > 1) {
+            var i = step
+            while (i <= nnx.size) {
+                val start = maxOf(0, i - num)
+                val window = nnx.subList(start, i)
+                val valid = window.filter { !it.isNaN() }
+                out[i] = if (valid.size < 5) Float.NaN else {
+                    val denom = valid.size - 1 + flag
+                    if (denom > 0) valid.sum() / denom else Float.NaN
+                }
+                i += step
+            }
+        } else {
+            for (i in rr.indices) {
+                if (i == 0) {
+                    out[i] = Float.NaN
+                    continue
+                }
+                val end = i
+                val start = maxOf(0, end - num)
+                val window = nnx.subList(start, end)
+                val valid = window.filter { !it.isNaN() }
+                out[i] = if (valid.size < 5) Float.NaN else {
+                    val denom = valid.size - 1 + flag
+                    if (denom > 0) valid.sum() / denom else Float.NaN
+                }
+            }
+        }
+
+        return out
+    }
+
+    fun fHrAverage(rrInput: List<Float>): Float = hr(rrInput, num = 0, segment = 0).firstOrNull() ?: Float.NaN
+    fun fSdnn(rrInput: List<Float>, flag: Int = 1): Float = sdnn(rrInput, num = 0, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+    fun fRmssd(rrInput: List<Float>, flag: Int = 1): Float = rmssd(rrInput, num = 0, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+
+    fun fPnn10(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 10, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+    fun fPnn20(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 20, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+    fun fPnn30(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 30, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+    fun fPnn40(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 40, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+    fun fPnn50(rrInput: List<Float>, flag: Int = 1): Float = pNnx(rrInput, num = 0, xMs = 50, flag = flag, overlap = 1f).firstOrNull() ?: Float.NaN
+
+    /**
+     * MATLAB reference: [alpha_1, alpha_2] from DFA(HRV_Percentage)
+     * default: short=4..16, long=16..64, grade=1
+     */
+    fun dfaMetrics(
+        rrInput: List<Float>,
+        boxsizeShort: IntRange = 4..16,
+        boxsizeLong: IntRange = 16..64,
+        grade: Int = 1
+    ): DfaMetrics {
+        val rr = rrInput.filter { !it.isNaN() }
+        if (rr.size < 8 || grade != 1) return DfaMetrics(Float.NaN, Float.NaN)
+
+        val meanRr = rr.sum() / rr.size
+        val y = MutableList(rr.size) { 0f }
+        var cumulative = 0f
+        for (i in rr.indices) {
+            cumulative += rr[i] - meanRr
+            y[i] = cumulative
+        }
+
+        val boxSizes = (boxsizeShort.toList() + boxsizeLong.toList()).distinct().filter { it >= 2 }
+        if (boxSizes.isEmpty()) return DfaMetrics(Float.NaN, Float.NaN)
+
+        val fByBox = mutableMapOf<Int, Float>()
+
+        for (bs in boxSizes) {
+            val trend = FloatArray(rr.size)
+            val lastSegment = (rr.size - 2) / bs
+            for (segment in 0..lastSegment) {
+                val start = segment * bs
+                val endInclusive = if (segment == lastSegment) rr.lastIndex else ((segment + 1) * bs - 1).coerceAtMost(rr.lastIndex)
+                val x = IntArray(endInclusive - start + 1) { idx -> start + idx + 1 }
+                val ySeg = FloatArray(x.size) { idx -> y[start + idx] }
+                val coeff = polyfitLinear(x, ySeg) ?: continue
+                val (slope, intercept) = coeff
+                for (idx in x.indices) {
+                    trend[start + idx] = slope * x[idx] + intercept
+                }
+            }
+
+            var sumSq = 0.0
+            for (i in rr.indices) {
+                val d = y[i] - trend[i]
+                sumSq += d * d
+            }
+            val f = kotlin.math.sqrt(sumSq / rr.size).toFloat()
+            if (!f.isNaN() && f > 0f) {
+                fByBox[bs] = f
+            }
+        }
+
+        val shortPairs = boxsizeShort.mapNotNull { bs -> fByBox[bs]?.let { bs to it } }
+        val longPairs = boxsizeLong.mapNotNull { bs -> fByBox[bs]?.let { bs to it } }
+
+        val alpha1 = if (shortPairs.size >= 2) {
+            linearRegressionSlope(
+                shortPairs.map { kotlin.math.ln(it.first.toFloat()) },
+                shortPairs.map { kotlin.math.ln(it.second) }
+            )
+        } else {
+            Float.NaN
+        }
+
+        val alpha2 = if (longPairs.size >= 2) {
+            linearRegressionSlope(
+                longPairs.map { kotlin.math.ln(it.first.toFloat()) },
+                longPairs.map { kotlin.math.ln(it.second) }
+            )
+        } else {
+            Float.NaN
+        }
+
+        return DfaMetrics(alpha1 = alpha1, alpha2 = alpha2)
+    }
+
+    fun fAlpha(
+        rrInput: List<Float>,
+        boxsizeShort: IntRange = 4..16,
+        boxsizeLong: IntRange = 16..64,
+        grade: Int = 1
+    ): Float = dfaMetrics(rrInput, boxsizeShort, boxsizeLong, grade).alpha1
+
+    /**
+     * MATLAB reference: [TRI,TINN] = triangular_val(HRV_Percentage,0,1/128,1)
+     */
+    fun fTriangular(rrInput: List<Float>, w: Float = 1f / 128f): TriangularMetrics {
+        if (rrInput.isEmpty() || w <= 0f) return TriangularMetrics(Float.NaN, Float.NaN)
+
+        val rr = rrInput.filter { !it.isNaN() }
+        if (rr.isEmpty()) return TriangularMetrics(Float.NaN, Float.NaN)
+
+        // RR is expected in seconds for triangular_val; auto-convert if input looks like ms.
+        val median = rr.sorted()[rr.size / 2]
+        val rrSec = if (median > 10f) rr.map { it / 1000f } else rr
+
+        val h = histCounts(rrSec, 0f, 5f, w)
+        val maxH = h.maxOrNull() ?: 0
+        if (maxH <= 0) return TriangularMetrics(Float.NaN, Float.NaN)
+
+        val tri = h.sum().toFloat() / maxH.toFloat()
+        val triX = h.indexOfFirst { it == maxH } + 1 // 1-based
+
+        val firstNonZero = h.indexOfFirst { it != 0 } + 1
+        val lastNonZero = h.indexOfLast { it != 0 } + 1
+
+        var n = triX - 1
+        if (firstNonZero > 0 && firstNonZero < triX - 1) {
+            var bestVal = Double.POSITIVE_INFINITY
+            var bestN = n
+            for (i in firstNonZero..(triX - 1)) {
+                val v = tiN(i, h.subList(0, triX))
+                if (v < bestVal) {
+                    bestVal = v
+                    bestN = i
+                }
+            }
+            n = bestN
+        }
+
+        var m = triX + 1
+        if (lastNonZero > 0 && triX < lastNonZero) {
+            var bestVal = Double.POSITIVE_INFINITY
+            var bestM = m
+            val hs = h.subList(triX - 1, h.size)
+            val end = lastNonZero - triX
+            for (i in 1..end) {
+                val candidate = i + 1
+                val v = tiM(candidate, hs)
+                if (v <= bestVal) { // last minimum
+                    bestVal = v
+                    bestM = candidate + triX - 1
+                }
+            }
+            m = bestM
+        }
+
+        val tinn = (m - n) * w
+        return TriangularMetrics(tri = tri, tinn = tinn)
+    }
+
+
+    /**
+     * MATLAB reference: shann = wentropy(HRV_Percentage, Level=1)
+     * Returns first two scale entropies as f_shann1 and f_shann2.
+     */
+    fun fShann(rrInput: List<Float>): ShannMetrics {
+        val x = rrInput.filter { !it.isNaN() }
+        if (x.size < 4) return ShannMetrics(Float.NaN, Float.NaN)
+
+        // Level=1 decomposition (periodic, Haar-like single level)
+        val nEven = x.size - (x.size % 2)
+        if (nEven < 4) return ShannMetrics(Float.NaN, Float.NaN)
+
+        val approx = mutableListOf<Float>()
+        val detail = mutableListOf<Float>()
+        var i = 0
+        while (i < nEven) {
+            val a = (x[i] + x[i + 1]) / 2f
+            val d = (x[i] - x[i + 1]) / 2f
+            approx += a
+            detail += d
+            i += 2
+        }
+
+        fun normalizedShannon(values: List<Float>): Float {
+            if (values.isEmpty()) return Float.NaN
+            val energy = values.map { it * it }
+            val total = energy.sum()
+            if (total <= 0f) return 0f
+            val n = energy.size
+            val p = energy.map { it / total }
+            var h = 0.0
+            for (pi in p) {
+                if (pi > 0f) h -= pi * ln(pi)
+            }
+            val denom = ln(n.toFloat())
+            return if (denom > 0f) (h / denom).toFloat() else 0f
+        }
+
+        // wentropy(Level=1) equivalent: detail first, approximation second
+        return ShannMetrics(
+            shann1 = normalizedShannon(detail),
+            shann2 = normalizedShannon(approx)
+        )
+    }
+
+
+    fun stdMoment(yInput: List<Float>, order: Int): Float {
+        val y = yInput.filter { !it.isNaN() }
+        val n = y.size
+        if (n == 0 || order < 1) return Float.NaN
+
+        val mu = y.sum() / n
+        var nom = 0.0
+        var varTerm = 0.0
+        for (v in y) {
+            val d = (v - mu).toDouble()
+            nom += d.pow(order.toDouble())
+            varTerm += d * d
+        }
+
+        nom /= n.toDouble()
+        val denBase = varTerm / n.toDouble()
+        if (denBase <= 0.0) return Float.NaN
+
+        val den = denBase.pow(order / 2.0)
+        if (den == 0.0) return Float.NaN
+        return (nom / den).toFloat()
+    }
+
+    fun fM1(yInput: List<Float>): Float = stdMoment(yInput, 1)
+    fun fM2(yInput: List<Float>): Float = stdMoment(yInput, 2)
+    fun fM3(yInput: List<Float>): Float = stdMoment(yInput, 3)
+
+    /**
+     * MATLAB reference:
+     * ac = autocorr(HRV_Percentage);
+     * f_autoc = max(ac(2:end,1));
+     */
+    fun fAutoc(signalInput: List<Float>, numLags: Int? = null): Float {
+        val signal = signalInput.filter { !it.isNaN() }
+        val n = signal.size
+        if (n < 2) return Float.NaN
+
+        val mean = signal.sum() / n
+        val centered = DoubleArray(n) { i -> (signal[i] - mean).toDouble() }
+        val acf0 = centered.sumOf { it * it } / n.toDouble()
+        if (acf0 <= 0.0) return Float.NaN
+
+        val maxLag = (numLags ?: minOf(20, n - 1)).coerceIn(1, n - 1)
+        var maxAc = Double.NEGATIVE_INFINITY
+
+        for (lag in 1..maxLag) {
+            var cross = 0.0
+            for (t in 0 until (n - lag)) {
+                cross += centered[t] * centered[t + lag]
+            }
+            val acLag = (cross / n.toDouble()) / acf0
+            if (acLag > maxAc) maxAc = acLag
+        }
+
+        return if (maxAc.isFinite()) maxAc.toFloat() else Float.NaN
+    }
+
+    /**
+     * MATLAB reference: f_apen = ApEn(HRV_Percentage)
+     * Default: num=0, m=2, r=0.2*SDNN(RR)
+     */
+    fun fApen(rrInput: List<Float>, m: Int = 2, r: Float? = null): Float {
+        val rr = rrInput.filter { !it.isNaN() }
+        val n = rr.size
+        if (n <= m + 1 || m < 1) return Float.NaN
+
+        val sdnn = nanStd(rr, flag = 0)
+        val threshold = r ?: (0.2f * sdnn)
+        if (threshold.isNaN() || threshold <= 0f) return Float.NaN
+
+        val nM = n - m + 1
+        val nM1 = n - m
+        if (nM <= 0 || nM1 <= 0) return Float.NaN
+
+        fun phi(dim: Int): Double {
+            val countLen = n - dim + 1
+            val c = DoubleArray(countLen)
+            for (i in 0 until countLen) {
+                var cnt = 0
+                for (j in 0 until countLen) {
+                    var maxDist = 0f
+                    for (k in 0 until dim) {
+                        val d = abs(rr[i + k] - rr[j + k])
+                        if (d > maxDist) maxDist = d
+                        if (maxDist > threshold) break
+                    }
+                    if (maxDist <= threshold) cnt++
+                }
+                c[i] = cnt.toDouble() / countLen.toDouble()
+            }
+            return c.map { kotlin.math.ln(it.coerceAtLeast(1e-12)) }.average()
+        }
+
+        return (phi(m) - phi(m + 1)).toFloat()
+    }
+
+    /**
+     * MATLAB reference: f_sampen = sampen(HRV_Percentage, 2, 0.2)
+     * Uses Chebyshev distance by default.
+     */
+    fun fSampen(signalInput: List<Float>, m: Int = 2, r: Float = 0.2f): Float {
+        val signal = signalInput.filter { !it.isNaN() }
+        val n = signal.size
+        if (n < 4 || m < 1 || m >= n || r <= 0f) return Float.NaN
+
+        val sigma = nanStd(signal, flag = 0)
+        if (sigma.isNaN() || sigma <= 0f) return Float.NaN
+        val threshold = r * sigma
+
+        fun countMatches(dim: Int): Int {
+            val countLen = n - dim + 1
+            var matches = 0
+            for (i in 0 until countLen - 1) {
+                for (j in (i + 1) until countLen) {
+                    var maxDist = 0f
+                    for (k in 0 until dim) {
+                        val d = abs(signal[i + k] - signal[j + k])
+                        if (d > maxDist) maxDist = d
+                        if (maxDist > threshold) break
+                    }
+                    if (maxDist <= threshold) matches++
+                }
+            }
+            return matches
+        }
+
+        val b = countMatches(m)
+        val a = countMatches(m + 1)
+
+        val value = if (a > 0 && b > 0 && (n - m - 1) > 0) {
+            val ratio = (a.toDouble() / b.toDouble()) * ((n - m + 1).toDouble() / (n - m - 1).toDouble())
+            -ln(ratio).toFloat()
+        } else {
+            Float.POSITIVE_INFINITY
+        }
+
+        return if (value.isInfinite()) {
+            if ((n - m - 1) <= 0 || (n - m) <= 0) Float.NaN
+            else -ln(2.0 / ((n - m - 1).toDouble() * (n - m).toDouble())).toFloat()
+        } else {
+            value
+        }
+    }
+
+    /**
+     * MATLAB reference: cdim = CD(HRV_Percentage,m,r)
+     */
+    fun fCd(rrInput: List<Float>, m: Int = 10, r: List<Float> = (50..100).map { it / 1000f }): Float {
+        if (rrInput.isEmpty() || m < 1 || r.isEmpty()) return Float.NaN
+
+        val rrRaw = rrInput.filter { !it.isNaN() }
+        if (rrRaw.size <= m) return Float.NaN
+
+        val median = rrRaw.sorted()[rrRaw.size / 2]
+        val rr = if (median > 10f) rrRaw.map { it / 1000f } else rrRaw
+        val n = rr.size
+
+        val d = Array(n) { DoubleArray(2 * n) { Double.NaN } }
+        for (i in 0 until n) {
+            val start = n - i
+            val end = 2 * n - i - 1
+            var col = start
+            for (j in 0 until n) {
+                d[i][col] = ((rr[i] - rr[j]) * (rr[i] - rr[j])).toDouble()
+                col++
+            }
+            if (col - 1 != end) {
+                // no-op, just keeps parity with MATLAB index construction
+            }
+        }
+
+        val dTrim = Array(n) { row -> DoubleArray(n - 1) { col -> d[row][col] } }
+
+        val dVec = mutableListOf<Double>()
+        for (col in 0 until (n - 1)) {
+            for (row in 0 until n) {
+                dVec += dTrim[row][col]
+            }
+        }
+
+        val filtered = movingFilterSum(dVec, m)
+
+        val D = Array(n) { DoubleArray(n - 1) { Double.NaN } }
+        var k = 0
+        for (col in 0 until (n - 1)) {
+            for (row in 0 until n) {
+                D[row][col] = filtered[k++]
+            }
+        }
+
+        val denom = (n - m + 1) * (n - m)
+        if (denom <= 0) return Float.NaN
+
+        val cValues = mutableListOf<Double>()
+        for (rv in r) {
+            val thr = rv * rv
+            var count = 0
+            for (row in D.indices) {
+                for (col in D[row].indices) {
+                    val v = D[row][col]
+                    if (!v.isNaN() && v <= thr) count++
+                }
+            }
+            cValues += (2.0 * count) / denom.toDouble()
+        }
+
+        val pairs = r.zip(cValues).filter { it.second > 0.0f }
+        if (pairs.size < 2) return Float.NaN
+
+        val x = pairs.map { kotlin.math.log10(it.first.toDouble()) }
+        val y = pairs.map { kotlin.math.log10(it.second) }
+        return linearRegressionSlopeDouble(x, y).toFloat()
+    }
+
+
+    /**
+     * MATLAB: [f_pLF, f_pHF, f_LFHF, f_VLF, f_LF, f_HF] = fft_val_fun(HRV_Percentage, 500)
+     */
+    fun fFftMetrics(rrInput: List<Float>, fs: Float = 4f): FftMetrics {
+        val rr = rrInput.filter { !it.isNaN() }
+        if (rr.size < 2 || fs <= 0f) {
+            return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
+        }
+
+        // 입력이 ms 단위로 보이면 sec로 변환
+        val probeSize = minOf(rr.size, 1024)
+        val probeMean = rr.subList(0, probeSize).sum() / probeSize.toFloat()
+        val rrSec = if (probeMean > 10f) rr.map { it / 1000f } else rr
+
+        val ann = ArrayList<Float>(rrSec.size)
+        var sum = 0f
+        rrSec.forEachIndexed { idx, v ->
+            sum += v
+            ann += if (idx == 0) 0f else sum - rrSec.first()
+        }
+
+        val end = ann.last()
+        if (end <= 0f) {
+            return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
+        }
+
+        // HRV 대역(최대 0.4Hz) 계산에는 2~4Hz면 충분
+        val effectiveFs = minOf(fs, 4f)
+        val step = 1f / effectiveFs
+        val rrResampled = splineResample(ann, rrSec, step)
+        if (rrResampled.isEmpty()) {
+            return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
+        }
+
+        val z = nanZScore(rrResampled, opt = 0)
+        val l = z.size
+        if (l < 2) {
+            return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
+        }
+
+        // 직접 DFT: 0.4Hz까지만 계산 (Nyquist 전체 계산 생략)
+        val maxHz = 0.4f
+        val maxK = kotlin.math.min((maxHz * l / effectiveFs).toInt(), l / 2)
+        if (maxK <= 0) {
+            return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
+        }
+
+        var vlf = 0f
+        var lfTotal = 0f
+        var hfTotal = 0f
+
+        for (k in 0..maxK) {
+            var real = 0.0
+            var imag = 0.0
+            for (n in 0 until l) {
+                val angle = -2.0 * Math.PI * k * n / l
+                val sample = z[n].toDouble()
+                real += sample * kotlin.math.cos(angle)
+                imag += sample * kotlin.math.sin(angle)
+            }
+            real /= l
+            imag /= l
+            val amp = 2.0 * kotlin.math.sqrt(real * real + imag * imag)
+            val p = (amp * amp).toFloat()
+
+            val f = k.toFloat() * effectiveFs / l.toFloat()
+            if (f <= 0.04f) vlf += p
+            if (f <= 0.15f) lfTotal += p
+            if (f <= 0.4f) hfTotal += p
+        }
+
+        val lf = lfTotal - vlf
+        val hf = hfTotal - vlf - lf
+        val tp = hfTotal
+
+        val denom = tp - vlf
+        val pLf = if (denom > 0f) lf / denom * 100f else Float.NaN
+        val pHf = if (denom > 0f) hf / denom * 100f else Float.NaN
+        val lfHfRatio = if (hf != 0f) lf / hf else Float.NaN
+
+        return FftMetrics(
+            pLf = pLf,
+            pHf = pHf,
+            lfHfRatio = lfHfRatio,
+            vLf = vlf,
+            lf = lf,
+            hf = hf
+        )
+    }
+
+    /**
+     * MATLAB: [f_SD1, f_SD2, f_SD1SD2] = returnmap_val(HRV_Percentage,0,0)
+     */
+    fun fPoincare(rrInput: List<Float>): PoincareMetrics {
+        if (rrInput.size < 2) {
+            return PoincareMetrics(Float.NaN, Float.NaN, Float.NaN)
+        }
+
+        val x1 = mutableListOf<Float>()
+        val x2 = mutableListOf<Float>()
+        for (i in 0 until rrInput.lastIndex) {
+            x1 += rrInput[i]
+            x2 += rrInput[i + 1]
+        }
+
+        val c = 0.70710677f // cos(-45°) = sin(45°)
+        val xr1 = MutableList(x1.size) { i ->
+            val a = x1[i]
+            val b = x2[i]
+            if (a.isNaN() || b.isNaN()) Float.NaN else c * (a + b)
+        }
+        val xr2 = MutableList(x1.size) { i ->
+            val a = x1[i]
+            val b = x2[i]
+            if (a.isNaN() || b.isNaN()) Float.NaN else c * (b - a)
+        }
+
+        // returnmap_val(..., 0, 0): flag=0 -> n-1 normalization
+        val sd2 = nanStd(xr1, flag = 0)
+        val sd1 = nanStd(xr2, flag = 0)
+        val ratio = if (sd2 == 0f || sd2.isNaN()) Float.NaN else sd1 / sd2
+
+        return PoincareMetrics(sd1 = sd1, sd2 = sd2, sd1Sd2Ratio = ratio)
+    }
+
+    private fun constantIntervalWindow(rr: List<Float>, num: Int): List<Float> {
+        val out = MutableList(rr.size) { Float.NaN }
+        for (i in rr.indices) {
+            var count = 0
+            var sum = 0f
+            val start = (i - num + 1).coerceAtLeast(0)
+            for (j in start..i) {
+                val v = rr[j]
+                if (!v.isNaN()) {
+                    count++
+                    sum += v
+                }
+            }
+            out[i] = if (count > 0 && sum > 0f) 60f * count / sum else Float.NaN
+        }
+        return out
+    }
+
+    private fun rollingSecondWindow(rr: List<Float>, seconds: Int): List<Float> {
+        val out = MutableList(rr.size) { Float.NaN }
+        for (i in rr.indices) {
+            var count = 0
+            var sum = 0f
+            var t = 0f
+            var j = i
+            while (j >= 0 && t <= seconds) {
+                val v = rr[j]
+                if (!v.isNaN()) {
+                    count++
+                    sum += v
+                    t += v
+                }
+                j--
+            }
+            out[i] = if (count > 0 && sum > 0f) 60f * count / sum else Float.NaN
+        }
+        return out
+    }
+
+
+    private fun histCounts(values: List<Float>, start: Float, end: Float, step: Float): List<Int> {
+        if (step <= 0f || end <= start) return emptyList()
+        val bins = kotlin.math.ceil(((end - start) / step).toDouble()).toInt()
+        val counts = MutableList(bins) { 0 }
+        for (v in values) {
+            if (v < start || v > end) continue
+            var idx = ((v - start) / step).toInt()
+            if (idx >= bins) idx = bins - 1
+            if (idx >= 0) counts[idx] = counts[idx] + 1
+        }
+        return counts
+    }
+
+    private fun tiN(n: Int, h: List<Int>): Double {
+        val len = h.size
+        if (n < 1 || n > len) return Double.NaN
+        val maxH = h.maxOrNull()?.toDouble() ?: return Double.NaN
+
+        var s1 = 0.0
+        for (k in n..len) {
+            val y = linearInterpolate(n.toDouble(), len.toDouble(), 0.0, maxH, k.toDouble())
+            val d = y - h[k - 1]
+            s1 += d * d
+        }
+
+        var s2 = 0.0
+        for (k in 1 until n) {
+            val v = h[k - 1].toDouble()
+            s2 += v * v
+        }
+
+        return s1 + s2
+    }
+
+    private fun tiM(m: Int, h: List<Int>): Double {
+        val len = h.size
+        if (m < 1 || m > len) return Double.NaN
+        val maxH = h.maxOrNull()?.toDouble() ?: return Double.NaN
+
+        var s1 = 0.0
+        for (k in 1..m) {
+            val y = linearInterpolate(1.0, m.toDouble(), maxH, 0.0, k.toDouble())
+            val d = y - h[k - 1]
+            s1 += d * d
+        }
+
+        var s2 = 0.0
+        for (k in (m + 1)..len) {
+            val v = h[k - 1].toDouble()
+            s2 += v * v
+        }
+
+        return s1 + s2
+    }
+
+    private fun linearInterpolate(x0: Double, x1: Double, y0: Double, y1: Double, x: Double): Double {
+        if (x1 == x0) return y0
+        val t = (x - x0) / (x1 - x0)
+        return y0 + t * (y1 - y0)
+    }
+
+    private fun movingFilterSum(values: List<Double>, m: Int): List<Double> {
+        val out = MutableList(values.size) { Double.NaN }
+        var sum = 0.0
+        var nanCount = 0
+        val window = ArrayDeque<Double>()
+
+        for (i in values.indices) {
+            val v = values[i]
+            window.addLast(v)
+            if (v.isNaN()) nanCount++ else sum += v
+
+            if (window.size > m) {
+                val old = window.removeFirst()
+                if (old.isNaN()) nanCount-- else sum -= old
+            }
+
+            out[i] = if (nanCount > 0) Double.NaN else sum
+        }
+        return out
+    }
+
+    private fun linearRegressionSlopeDouble(x: List<Double>, y: List<Double>): Double {
+        if (x.size != y.size || x.size < 2) return Double.NaN
+        val n = x.size.toDouble()
+        val meanX = x.sum() / n
+        val meanY = y.sum() / n
+
+        var num = 0.0
+        var den = 0.0
+        for (i in x.indices) {
+            val dx = x[i] - meanX
+            num += dx * (y[i] - meanY)
+            den += dx * dx
+        }
+        if (den == 0.0) return Double.NaN
+        return num / den
+    }
+
+    private fun polyfitLinear(x: IntArray, y: FloatArray): Pair<Float, Float>? {
+        if (x.size != y.size || x.isEmpty()) return null
+
+        val n = x.size.toFloat()
+        val sumX = x.sum().toFloat()
+        val sumY = y.sum()
+        var sumXX = 0f
+        var sumXY = 0f
+        for (i in x.indices) {
+            val xv = x[i].toFloat()
+            val yv = y[i]
+            sumXX += xv * xv
+            sumXY += xv * yv
+        }
+
+        val denom = n * sumXX - sumX * sumX
+        if (denom == 0f) return null
+
+        val slope = (n * sumXY - sumX * sumY) / denom
+        val intercept = (sumY - slope * sumX) / n
+        return slope to intercept
+    }
+
+    private fun linearRegressionSlope(x: List<Float>, y: List<Float>): Float {
+        if (x.size != y.size || x.size < 2) return Float.NaN
+
+        val n = x.size.toFloat()
+        val meanX = x.sum() / n
+        val meanY = y.sum() / n
+
+        var numerator = 0f
+        var denominator = 0f
+        for (i in x.indices) {
+            val dx = x[i] - meanX
+            numerator += dx * (y[i] - meanY)
+            denominator += dx * dx
+        }
+
+        if (denominator == 0f) return Float.NaN
+        return numerator / denominator
+    }
+
+    private fun splineResample(x: List<Float>, y: List<Float>, step: Float): List<Float> {
+        if (x.size < 2 || y.size < 2 || x.size != y.size) return emptyList()
+
+        val spline = NaturalCubicSpline(
+            x.map { it.toDouble() },
+            y.map { it.toDouble() }
+        )
+
+        val out = mutableListOf<Float>()
+        var t = 0f
+        val end = x.last()
+        while (t <= end + 1e-6f) {
+            out += spline.evaluate(t.toDouble()).toFloat()
+            t += step
+        }
+        return out
+    }
+
+    private fun nanMean(values: List<Float>): Float {
+        val valid = values.filter { !it.isNaN() }
+        return if (valid.isEmpty()) Float.NaN else valid.sum() / valid.size
+    }
+
+    private fun nanZScore(values: List<Float>, opt: Int = 0): List<Float> {
+        val m = nanMean(values)
+        val s = nanStd(values, opt)
+        if (m.isNaN() || s.isNaN() || s == 0f) return List(values.size) { 0f }
+        return values.map { v -> if (v.isNaN()) Float.NaN else (v - m) / s }
+    }
+
+    private fun nextPow2(value: Int): Int {
+        var n = 1
+        while (n < value) n = n shl 1
+        return n
+    }
+
+    private class NaturalCubicSpline(
+        private val x: List<Double>,
+        private val y: List<Double>
+    ) {
+        private val n = x.size
+        private val a = y.toMutableList()
+        private val b = MutableList(n - 1) { 0.0 }
+        private val c = MutableList(n) { 0.0 }
+        private val d = MutableList(n - 1) { 0.0 }
+
+        init {
+            val h = MutableList(n - 1) { i -> x[i + 1] - x[i] }
+            val alpha = MutableList(n) { 0.0 }
+
+            for (i in 1 until n - 1) {
+                alpha[i] = (3.0 / h[i]) * (a[i + 1] - a[i]) - (3.0 / h[i - 1]) * (a[i] - a[i - 1])
+            }
+
+            val l = MutableList(n) { 0.0 }
+            val mu = MutableList(n) { 0.0 }
+            val z = MutableList(n) { 0.0 }
+
+            l[0] = 1.0
+            for (i in 1 until n - 1) {
+                l[i] = 2.0 * (x[i + 1] - x[i - 1]) - h[i - 1] * mu[i - 1]
+                mu[i] = h[i] / l[i]
+                z[i] = (alpha[i] - h[i - 1] * z[i - 1]) / l[i]
+            }
+
+            l[n - 1] = 1.0
+            c[n - 1] = 0.0
+
+            for (j in n - 2 downTo 0) {
+                c[j] = z[j] - mu[j] * c[j + 1]
+                b[j] = (a[j + 1] - a[j]) / h[j] - h[j] * (c[j + 1] + 2.0 * c[j]) / 3.0
+                d[j] = (c[j + 1] - c[j]) / (3.0 * h[j])
+            }
+        }
+
+        fun evaluate(xq: Double): Double {
+            if (xq <= x.first()) return y.first()
+            if (xq >= x.last()) return y.last()
+
+            var low = 0
+            var high = n - 1
+            while (low <= high) {
+                val mid = (low + high) ushr 1
+                when {
+                    xq < x[mid] -> high = mid - 1
+                    xq > x[mid] -> low = mid + 1
+                    else -> return y[mid]
+                }
+            }
+
+            val i = (low - 1).coerceIn(0, n - 2)
+            val dx = xq - x[i]
+            return a[i] + b[i] * dx + c[i] * dx * dx + d[i] * dx * dx * dx
+        }
+    }
+
+    private fun nanStd(values: List<Float>, flag: Int): Float {
+        val valid = values.filter { !it.isNaN() }
+        val n = valid.size
+        if (n == 0) return Float.NaN
+        if (n == 1) return 0f
+
+        val mean = valid.sum() / n
+        val varianceNumerator = valid.sumOf { ((it - mean) * (it - mean)).toDouble() }
+        val denominator = if (flag == 0) (n - 1).toDouble() else n.toDouble()
+        if (denominator <= 0.0) return Float.NaN
+
+        return sqrt(varianceNumerator / denominator).toFloat()
+    }
+}
