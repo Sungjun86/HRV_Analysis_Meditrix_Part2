@@ -18,7 +18,7 @@ object CsvParser {
     ): List<HrvSample> {
         if (maxSamples <= 0) return emptyList()
 
-        val estimatedRows = countNumericRows(contentResolver, uri)
+        val estimatedRows = countValidRows(contentResolver, uri)
         val stride = if (estimatedRows > maxSamples) {
             ceil(estimatedRows / maxSamples.toDouble()).toInt().coerceAtLeast(1)
         } else {
@@ -33,25 +33,32 @@ object CsvParser {
             lines.forEach { line ->
                 if (line.isBlank()) return@forEach
 
-                val parsed = parseUpToTwoNumbers(line)
-                when (parsed.size) {
-                    2 -> {
-                        val t = parsed[0]
-                        val v = parsed[1]
-                        if (rowIndex % stride == 0) {
-                            appendIfNewTime(samples, HrvSample(timeSec = t, value = v))
+                val cols = line.split(',', ';', '\t', limit = 4).map { it.trim() }
+
+                when {
+                    // 1번 column = time, 3번 column = value
+                    cols.size >= 3 -> {
+                        val time = cols[0].toFloatOrNull()
+                        val value = cols[2].toFloatOrNull()
+                        if (time != null && value != null) {
+                            if (rowIndex % stride == 0) {
+                                appendIfNewTime(samples, HrvSample(timeSec = time, value = value))
+                            }
+                            rowIndex++
                         }
-                        rowIndex++
                     }
 
-                    1 -> {
-                        val rrMs = parsed[0]
-                        val time = cumulativeSec
-                        if (rowIndex % stride == 0) {
-                            appendIfNewTime(samples, HrvSample(timeSec = time, value = rrMs))
+                    // single-column RR(ms)
+                    cols.size == 1 -> {
+                        val rrMs = cols[0].toFloatOrNull()
+                        if (rrMs != null) {
+                            val time = cumulativeSec
+                            if (rowIndex % stride == 0) {
+                                appendIfNewTime(samples, HrvSample(timeSec = time, value = rrMs))
+                            }
+                            cumulativeSec += (rrMs / 1000f).coerceAtLeast(0f)
+                            rowIndex++
                         }
-                        cumulativeSec += (rrMs / 1000f).coerceAtLeast(0f)
-                        rowIndex++
                     }
                 }
             }
@@ -60,39 +67,21 @@ object CsvParser {
         return samples
     }
 
-    private fun countNumericRows(contentResolver: ContentResolver, uri: Uri): Int {
+    private fun countValidRows(contentResolver: ContentResolver, uri: Uri): Int {
         var count = 0
         contentResolver.openInputStream(uri)?.bufferedReader()?.useLines { lines ->
             lines.forEach { line ->
                 if (line.isBlank()) return@forEach
-                if (parseUpToTwoNumbers(line).isNotEmpty()) count++
+                val cols = line.split(',', ';', '\t', limit = 4).map { it.trim() }
+                val valid = when {
+                    cols.size >= 3 -> cols[0].toFloatOrNull() != null && cols[2].toFloatOrNull() != null
+                    cols.size == 1 -> cols[0].toFloatOrNull() != null
+                    else -> false
+                }
+                if (valid) count++
             }
         }
         return count
-    }
-
-    private fun parseUpToTwoNumbers(line: String): List<Float> {
-        val out = ArrayList<Float>(2)
-        val token = StringBuilder()
-
-        fun flushToken() {
-            if (token.isEmpty()) return
-            val value = token.toString().trim().toFloatOrNull()
-            if (value != null) out.add(value)
-            token.setLength(0)
-        }
-
-        for (c in line) {
-            if (c == ',' || c == ';' || c == '\t') {
-                flushToken()
-                if (out.size >= 2) break
-            } else {
-                token.append(c)
-            }
-        }
-
-        if (out.size < 2) flushToken()
-        return out
     }
 
     private fun appendIfNewTime(samples: MutableList<HrvSample>, sample: HrvSample) {
