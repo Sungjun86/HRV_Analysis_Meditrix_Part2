@@ -635,13 +635,13 @@ object HrvFeatureExtractor {
     /**
      * MATLAB: [f_pLF, f_pHF, f_LFHF, f_VLF, f_LF, f_HF] = fft_val_fun(HRV_Percentage, 500)
      */
-    fun fFftMetrics(rrInput: List<Float>, fs: Float = 500f): FftMetrics {
+    fun fFftMetrics(rrInput: List<Float>, fs: Float = 4f): FftMetrics {
         val rr = rrInput.filter { !it.isNaN() }
         if (rr.size < 2 || fs <= 0f) {
             return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
         }
 
-        // 입력이 ms 단위로 보이면 sec로 변환 (대용량 resample 메모리 폭주 방지)
+        // 입력이 ms 단위로 보이면 sec로 변환
         val probeSize = minOf(rr.size, 1024)
         val probeMean = rr.subList(0, probeSize).sum() / probeSize.toFloat()
         val rrSec = if (probeMean > 10f) rr.map { it / 1000f } else rr
@@ -658,12 +658,8 @@ object HrvFeatureExtractor {
             return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
         }
 
-        val maxResampledPoints = 16384f
-        val effectiveFs = minOf(fs, maxResampledPoints / end)
-        if (effectiveFs <= 1f) {
-            return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
-        }
-
+        // HRV 대역(최대 0.4Hz) 계산에는 2~4Hz면 충분
+        val effectiveFs = minOf(fs, 4f)
         val step = 1f / effectiveFs
         val rrResampled = splineResample(ann, rrSec, step)
         if (rrResampled.isEmpty()) {
@@ -672,18 +668,26 @@ object HrvFeatureExtractor {
 
         val z = nanZScore(rrResampled, opt = 0)
         val l = z.size
-        if (l == 0) {
+        if (l < 2) {
             return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
         }
 
-        val nfft = nextPow2(l)
-        val power = FloatArray(nfft / 2 + 1)
+        // 직접 DFT: 0.4Hz까지만 계산 (Nyquist 전체 계산 생략)
+        val maxHz = 0.4f
+        val maxK = kotlin.math.min((maxHz * l / effectiveFs).toInt(), l / 2)
+        if (maxK <= 0) {
+            return FftMetrics(Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN)
+        }
 
-        for (k in 0..(nfft / 2)) {
+        var vlf = 0f
+        var lfTotal = 0f
+        var hfTotal = 0f
+
+        for (k in 0..maxK) {
             var real = 0.0
             var imag = 0.0
             for (n in 0 until l) {
-                val angle = -2.0 * Math.PI * k * n / nfft
+                val angle = -2.0 * Math.PI * k * n / l
                 val sample = z[n].toDouble()
                 real += sample * kotlin.math.cos(angle)
                 imag += sample * kotlin.math.sin(angle)
@@ -691,21 +695,13 @@ object HrvFeatureExtractor {
             real /= l
             imag /= l
             val amp = 2.0 * kotlin.math.sqrt(real * real + imag * imag)
-            power[k] = (amp * amp).toFloat()
-        }
+            val p = (amp * amp).toFloat()
 
-        fun bandSum(maxHz: Float): Float {
-            var acc = 0f
-            for (k in power.indices) {
-                val f = effectiveFs / 2f * (k.toFloat() / (nfft / 2f))
-                if (f <= maxHz) acc += power[k]
-            }
-            return acc
+            val f = k.toFloat() * effectiveFs / l.toFloat()
+            if (f <= 0.04f) vlf += p
+            if (f <= 0.15f) lfTotal += p
+            if (f <= 0.4f) hfTotal += p
         }
-
-        val vlf = bandSum(0.04f)
-        val lfTotal = bandSum(0.15f)
-        val hfTotal = bandSum(0.4f)
 
         val lf = lfTotal - vlf
         val hf = hfTotal - vlf - lf

@@ -207,7 +207,7 @@ class MainActivity : AppCompatActivity() {
         val fPnn40 = HrvFeatureExtractor.fPnn40(rrSeconds, flag = 1)
         val fPnn50 = HrvFeatureExtractor.fPnn50(rrSeconds, flag = 1)
         val poincare = HrvFeatureExtractor.fPoincare(hrvPercentageValues)
-        val fft = HrvFeatureExtractor.fFftMetrics(hrvPercentageValues, fs = 500f)
+        val fft = HrvFeatureExtractor.fFftMetrics(hrvPercentageValues, fs = 4f)
         val dfa = HrvFeatureExtractor.dfaMetrics(hrvPercentageValues)
         val tri = HrvFeatureExtractor.fTriangular(hrvPercentageValues)
         val fCd = HrvFeatureExtractor.fCd(hrvPercentageValues)
